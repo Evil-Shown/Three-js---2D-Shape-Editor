@@ -25,3 +25,99 @@ button {
 input {
   font-family: inherit;
 }
+
+/* --- App header: balanced layout, dropdowns always visible --- */
+.app-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  min-height: 52px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, #252a2e 0%, #1e2124 100%);
+  border-bottom: 1px solid #3a3f44;
+  z-index: 1000;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.app-header-brand {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.5px;
+  color: #7fffd4;
+  margin-right: 4px;
+}
+
+.app-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.app-header-menu-trigger {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #c8ccd0;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.app-header-menu-trigger:hover {
+  background: #2d3338;
+  color: #fff;
+}
+
+.app-header-menu-trigger.is-open {
+  background: #2d3338;
+  color: #7fffd4;
+}
+
+/* Dropdown rendered in portal so it's never clipped */
+.app-header-dropdown {
+  position: fixed;
+  min-width: 220px;
+  padding: 6px 0;
+  background: #2a3036;
+  border: 1px solid #3a4149;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  z-index: 10000;
+}
+
+.app-header-dropdown-item {
+  padding: 10px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  color: #e0e4e8;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.app-header-dropdown-item:hover:not(.is-disabled) {
+  background: #353b42;
+}
+
+.app-header-dropdown-item.is-disabled {
+  color: #5c636a;
+  cursor: default;
+}
+
+.app-header-dropdown-item-shortcut {
+  font-size: 13px;
+  color: #6b7280;
+  margin-left: 16px;
+}
+
+.app-header-dropdown-divider {
+  height: 1px;
+  background: #3a4149;
+  margin: 6px 0;
+}

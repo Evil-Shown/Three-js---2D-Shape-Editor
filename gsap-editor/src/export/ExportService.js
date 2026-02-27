@@ -1,8 +1,9 @@
 // src/export/ExportService.js
 
 export class ExportService {
-  constructor(store) {
+  constructor(store, paramStore) {
     this.store = store
+    this.paramStore = paramStore || null
   }
 
   exportJSON(meta = { name: 'shape', thickness: 1 }) {
@@ -21,6 +22,20 @@ export class ExportService {
         .filter(e => this._isValid(e))
     }
 
+    if (this.paramStore) {
+      const paramPayload = this.paramStore.getExportPayload()
+      if (paramPayload.parameters.length > 0) {
+        payload.shapeMetadata = paramPayload.shapeMetadata
+        payload.parameters = paramPayload.parameters
+        payload.pointExpressions = paramPayload.pointExpressions
+        payload.edgeServices = paramPayload.edgeServices
+
+        payload.edges = this.store.getEdges()
+          .map(e => this._cleanEdgeWithId(e))
+          .filter(e => this._isValid(e))
+      }
+    }
+
     if (payload.edges.length === 0) {
       alert('No valid edges to export')
       return
@@ -34,9 +49,42 @@ export class ExportService {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${meta.name}.json`
+
+    const fileName = this.paramStore
+      ? (this.paramStore.getShapeMetadata().className || meta.name)
+      : meta.name
+    a.download = `${fileName}.json`
     a.click()
     URL.revokeObjectURL(url)
+
+    return payload
+  }
+
+  getExportPayload(meta = { name: 'shape', thickness: 1 }) {
+    const payload = {
+      name: meta.name,
+      version: '1.0',
+      unit: 'mm',
+      thickness: meta.thickness,
+      edges: this.store.getEdges()
+        .map(e => this._cleanEdge(e))
+        .filter(e => this._isValid(e))
+    }
+
+    if (this.paramStore) {
+      const paramPayload = this.paramStore.getExportPayload()
+      if (paramPayload.parameters.length > 0) {
+        payload.shapeMetadata = paramPayload.shapeMetadata
+        payload.parameters = paramPayload.parameters
+        payload.pointExpressions = paramPayload.pointExpressions
+        payload.edgeServices = paramPayload.edgeServices
+        payload.edges = this.store.getEdges()
+          .map(e => this._cleanEdgeWithId(e))
+          .filter(e => this._isValid(e))
+      }
+    }
+
+    return payload
   }
 
   _cleanPoint(p) {
@@ -62,6 +110,12 @@ export class ExportService {
       }
     }
     return edge
+  }
+
+  _cleanEdgeWithId(edge) {
+    const clean = this._cleanEdge(edge)
+    clean.id = edge.id
+    return clean
   }
 
   _isValid(edge) {
