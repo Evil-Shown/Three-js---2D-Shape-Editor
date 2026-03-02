@@ -1,71 +1,99 @@
+# GSAP Editor (2D Shape Editor)
 
-# GSAP Editor
-
-A modern 2D shape editor built with React, Three.js, and Vite. This project provides an interactive environment for creating, editing, and exporting 2D geometric shapes, with advanced features such as snapping, constraints, annotation, and real-time preview.
+A modern 2D shape editor built with React, Three.js, and Vite. Create, edit, and export 2D geometric shapes with snapping, constraints, parameterized expressions, annotations, and real-time Three.js preview. Exported shapes can be saved to a MySQL database and optionally downloaded as JSON.
 
 ## Features
 
-- **Shape Tools**: Draw and edit lines, rectangles, circles, arcs, and more.
-- **Move & Select**: Intuitive selection and manipulation of shapes.
-- **Snapping**: Smart snapping to grid, points, and geometry for precision.
-- **Constraints**: Apply geometric constraints to maintain relationships between shapes.
-- **Annotations**: Add dimensions and notes to your drawings.
-- **Export**: Export your work in various formats.
-- **Preview**: Real-time rendering and preview using Three.js.
-- **Undo/Redo**: Command history for non-destructive editing.
+- **Shape tools**: Lines (multi-segment), arcs (center–radius or 3-point), rectangles, circles.
+- **Edit tools**: Select, Move, Trim (line–line), Offset (parallel line by distance).
+- **Snapping**: Endpoint, midpoint, center, intersection (line–line, line–arc, arc–arc), perpendicular, tangent, angle increment, grid.
+- **Constraints**: Horizontal/vertical lock, fixed length/angle/radius, parallel to edge.
+- **Parameter mode** (when shape is closed): Edge Tagger (E1–E8), Point Tagger (X/Y expressions for p0, p1, …), expression validation, topological sort for point dependencies.
+- **Info**: Measure (distance, angle, ΔX, ΔY), Dimension (annotation line + text).
+- **Export**: Build JSON from canvas → save to MySQL → toast notifications → optional download. JSON includes edges, optional parameters, point expressions, edge services, shape metadata, trim definition.
+- **Undo/Redo**: Command history (max 200 steps).
+- **Preview**: Real-time rendering via Three.js orthographic camera; adaptive grid.
 
-## Project Structure
+## Project structure
 
-- `src/components/` — Main UI components (e.g., Editor)
-- `src/tools/` — Shape and editing tools (LineTool, ArcTool, etc.)
-- `src/core/` — Core logic (CommandHistory, CoordinateEngine, EventBus)
-- `src/constraints/` — Constraint engine for geometric relationships
-- `src/snap/` — Snapping logic
-- `src/render/` — Rendering layers (Grid, Annotations)
-- `src/three/` — Three.js integration for preview
-- `src/export/` — Export services
-- `src/store/` — State management
+- **`gsap-editor/`** — React + Vite frontend (editor UI, tools, export).
+- **`server/`** — Node.js + Express API; connects to MySQL; auto-creates `shapes` table on first run.
 
-## Getting Started
+Frontend (`gsap-editor/`):
+
+- `src/components/` — Editor, Toolbar, ParameterPanel, Toast, SaveConfirmModal, StatusBar, …
+- `src/api/` — `shapesApi.js` (saveShape, listShapes, getShape, deleteShape, checkServerHealth)
+- `src/core/` — EventBus, CommandHistory, CoordinateEngine
+- `src/store/` — GeometryStore, ParameterStore
+- `src/snap/`, `src/constraints/`, `src/tools/`, `src/render/`, `src/three/`, `src/parameters/`, `src/export/`
+
+See **`gsap-editor/PROJECT-DOCUMENTATION.md`** for full structure, logic, and maths. See **`gsap-editor/TOOL-GUIDE.md`** for tool usage and the export flow.
+
+## Getting started
 
 ### Prerequisites
-- Node.js (v16 or higher recommended)
+
+- Node.js (v16+)
 - npm
+- MySQL (for saving shapes to the database)
 
-### Installation
+### 1. Database setup
 
-1. Clone the repository:
-	```sh
-	git clone <repo-url>
-	cd gsap-editor
-	```
-2. Install dependencies:
-	```sh
-	npm install
-	```
-3. Start the development server:
-	```sh
-	npm run dev
-	```
-4. Open your browser and navigate to the local server URL (usually `http://localhost:5173`).
+1. Create the database: open MySQL Workbench (or CLI) and run **once** the statements in **`server/setup.sql`** (create database `gsap_editor`, use it). The server auto-creates the `shapes` table on first run.
+2. In **`server/`**, copy `.env.example` to `.env` and set your MySQL password (e.g. `DB_PASSWORD=your_password_here`).
+
+### 2. Install and run
+
+**Option A — one command (recommended):** From the project root, install dependencies once (root + `server/` + `gsap-editor/`), then run both in one terminal:
+
+```sh
+cd "Three js - 2D Shape Editor"
+npm install
+cd server
+npm install
+cd ../gsap-editor
+npm install
+cd ..
+npm run dev
+```
+
+This starts the backend (http://localhost:3001) and frontend (http://localhost:5173) together with prefixed logs (`[server]` / `[frontend]`).
+
+**Option B — two terminals:**  
+Terminal 1: `cd server` → `npm install` → `npm run dev`.  
+Terminal 2: `cd gsap-editor` → `npm install` → `npm run dev`.  
+Open the frontend URL (e.g. http://localhost:5173). Vite proxies `/api/*` to the backend.
+
+### Export flow (Generate JSON / File → Export JSON)
+
+1. Payload is built from the canvas geometry (and parameters if in Parameter Mode).
+2. **"Saving to database…"** loading toast appears.
+3. Shape is POSTed to MySQL via `/api/shapes`.
+4. **"shape saved to database!"** success toast (bottom-right, auto-dismisses).
+5. **"Saved to Database"** modal: **No, thanks** (close; JSON only in DB) or **⬇ Download JSON** (download file and close).
+6. If the backend is unreachable, an error is toasted and the modal still opens so you can download the JSON locally.
 
 ## Scripts
 
-- `npm run dev` — Start the development server
-- `npm run build` — Build for production
-- `npm run preview` — Preview the production build
+**From project root:**
 
-## Technologies Used
+- `npm run dev` — Run backend + frontend together (concurrently)
+- `npm run dev:server` — Backend only (`server/`)
+- `npm run dev:frontend` — Frontend only (`gsap-editor/`)
 
-- [React](https://react.dev/)
-- [Three.js](https://threejs.org/)
-- [Vite](https://vitejs.dev/)
-- [GSAP](https://gsap.com/) (if used for animation)
+**Frontend (`gsap-editor/`):** `npm run dev` | `npm run build` | `npm run preview`
 
-## Contributing
+**Backend (`server/`):** `npm run dev` (nodemon) | `npm start` (node)
 
-Contributions are welcome! Please open issues or submit pull requests for improvements and bug fixes.
+## Technologies
+
+- [React](https://react.dev/) (React 19)
+- [Three.js](https://threejs.org/) — orthographic scene, lines/arcs, text sprites
+- [Vite](https://vitejs.dev/) — build and dev server (proxy to API)
+- Node.js, Express, MySQL (backend)
+
+*(The name “GSAP Editor” is legacy; GSAP is not used in the current codebase.)*
 
 ## License
 
-This project is licensed under the MIT License.
+MIT.

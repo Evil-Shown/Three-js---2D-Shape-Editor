@@ -1,7 +1,13 @@
 // src/parameters/ExpressionBuilder.js
+//
+// FIX: trimLeft and trimBottom are now seeded from the actual p0 drawn coordinates,
+// not hardcoded to 0. This is the root cause of every validation failure.
 
-const POINT_REF_REGEX = /p(\d+)\.(x|y)/g
-const IDENTIFIER_REGEX = /\b([A-Za-z_$][A-Za-z0-9_$]*)\b/g
+// NOTE: These regexes must NOT have the global flag when used with .test()
+// or in places where they're reused. Always create a new RegExp or use
+// matchAll with a source-derived regex for scanning.
+const POINT_REF_PATTERN = /p(\d+)\.(x|y)/
+const IDENTIFIER_PATTERN = /\b([A-Za-z_$][A-Za-z0-9_$]*)\b/
 
 const MATH_BUILTINS = new Set([
   'Math', 'sqrt', 'pow', 'abs', 'sin', 'cos', 'tan', 'atan2',
@@ -22,7 +28,6 @@ export class ExpressionBuilder {
 
     const errors = []
     const expr = expression.trim()
-
     const identifiers = this._extractIdentifiers(expr)
 
     for (const ident of identifiers) {
@@ -32,11 +37,16 @@ export class ExpressionBuilder {
 
       const param = parameterStore.getParameterByName(ident)
       if (!param) {
-        errors.push(`Unknown identifier: "${ident}"`)
+        const suggestion = this._findClosestParam(ident, parameterStore)
+        if (suggestion) {
+          errors.push(`Unknown identifier: "${ident}" — did you mean "${suggestion}"?`)
+        } else {
+          errors.push(`Unknown identifier: "${ident}"`)
+        }
       }
     }
 
-    const pointRefs = [...expr.matchAll(POINT_REF_REGEX)]
+    const pointRefs = [...expr.matchAll(new RegExp(POINT_REF_PATTERN.source, 'g'))]
     for (const match of pointRefs) {
       const pointIdx = parseInt(match[1], 10)
       if (pointIdx < 0) {
@@ -50,22 +60,17 @@ export class ExpressionBuilder {
       errors.push(`Syntax error: ${e.message}`)
     }
 
-    return {
-      isValid: errors.length === 0,
-      errors,
-    }
+    return { isValid: errors.length === 0, errors }
   }
 
   evaluate(expression, parameterValues, pointValues) {
     if (!expression || !expression.trim()) return NaN
 
     let expr = expression.trim()
-
     expr = expr.replace(/Math\.toRadians\(([^)]+)\)/g, '(($1) * Math.PI / 180)')
     expr = expr.replace(/Math\.toDegrees\(([^)]+)\)/g, '(($1) * 180 / Math.PI)')
 
     const scope = { Math, ...parameterValues }
-
     for (const [pointId, coords] of Object.entries(pointValues || {})) {
       scope[pointId] = coords
     }
@@ -78,24 +83,39 @@ export class ExpressionBuilder {
     }
   }
 
-  evaluateAll(parameterStore, geometryStore) {
+  /**
+   * Build the parameter value scope used for evaluation.
+   * KEY FIX: trimLeft and trimBottom are seeded from the actual drawn
+   * position of p0, not hardcoded to 0.
+   */
+  buildParamScope(parameterStore, shapePoints) {
     const params = parameterStore.getParameters()
     const paramValues = {}
-
     for (const p of params) {
       paramValues[p.name] = p.defaultValue
     }
 
-    paramValues.trimLeft = 0
-    paramValues.trimBottom = 0
+    // ── THE CRITICAL FIX ──────────────────────────────────────────────────────
+    // trimLeft / trimBottom represent the actual world-space origin of the shape.
+    // If we hardcode them to 0, every expression like "p0.x + L" evaluates as
+    // "0 + 200 = 200" while the drawn point is at "250" → mismatch every time.
+    // We must use the real p0 coordinates so the offset chain is correct.
+    const p0 = shapePoints ? shapePoints.find(sp => sp.id === 'p0') : null
+    paramValues.trimLeft   = p0 ? p0.x : 0
+    paramValues.trimBottom = p0 ? p0.y : 0
+    // ─────────────────────────────────────────────────────────────────────────
+
+    return paramValues
+  }
+
+  evaluateAll(parameterStore, geometryStore) {
+    const shapePoints = this.extractShapePoints(geometryStore)
+    const paramValues = this.buildParamScope(parameterStore, shapePoints)
 
     const pointExprs = parameterStore.getAllPointExpressions()
     const sortedPoints = this._topologicalSort(pointExprs)
     const computedPoints = {}
-    const summary = { total: 0, assigned: 0, verified: 0, errors: [] }
-
-    const shapePoints = this.extractShapePoints(geometryStore)
-    summary.total = shapePoints.length
+    const summary = { total: shapePoints.length, assigned: 0, verified: 0, errors: [] }
 
     for (const pointId of sortedPoints) {
       const expr = pointExprs[pointId]
@@ -104,15 +124,13 @@ export class ExpressionBuilder {
 
       const xVal = this.evaluate(expr.x, paramValues, computedPoints)
       const yVal = this.evaluate(expr.y, paramValues, computedPoints)
-
       computedPoints[pointId] = { x: xVal, y: yVal }
 
       const actual = shapePoints.find(sp => sp.id === pointId)
       if (actual) {
         const dx = Math.abs(xVal - actual.x)
         const dy = Math.abs(yVal - actual.y)
-        const EPSILON = 0.1
-        if (dx < EPSILON && dy < EPSILON) {
+        if (dx < 0.1 && dy < 0.1) {
           summary.verified++
         } else {
           summary.errors.push({
@@ -127,13 +145,36 @@ export class ExpressionBuilder {
     return { computedPoints, summary }
   }
 
+  /**
+   * Evaluate a single expression in context of the full shape.
+   * Useful for live-preview as the user types.
+   */
+  evaluateSingle(expression, parameterStore, geometryStore) {
+    const shapePoints = this.extractShapePoints(geometryStore)
+    const paramValues = this.buildParamScope(parameterStore, shapePoints)
+
+    // Build computed chain so point-refs resolve correctly
+    const pointExprs = parameterStore.getAllPointExpressions()
+    const sortedPoints = this._topologicalSort(pointExprs)
+    const computedPoints = {}
+
+    for (const pointId of sortedPoints) {
+      const expr = pointExprs[pointId]
+      if (!expr) continue
+      const xv = this.evaluate(expr.x, paramValues, computedPoints)
+      const yv = this.evaluate(expr.y, paramValues, computedPoints)
+      computedPoints[pointId] = { x: xv, y: yv }
+    }
+
+    return this.evaluate(expression, paramValues, computedPoints)
+  }
+
   extractShapePoints(geometryStore) {
     const edges = geometryStore.getEdges()
     if (edges.length === 0) return []
 
     const points = []
     const seen = new Set()
-    const EPSILON = 0.01
 
     const addPoint = (x, y) => {
       const key = `${Math.round(x * 100)}:${Math.round(y * 100)}`
@@ -145,10 +186,15 @@ export class ExpressionBuilder {
     for (const edge of edges) {
       if (edge.type === 'line') {
         addPoint(edge.start.x, edge.start.y)
+        addPoint(edge.end.x, edge.end.y)
       } else if (edge.type === 'arc') {
+        // Add both start AND end points of arcs
         const sx = edge.center.x + edge.radius * Math.cos(edge.startAngle)
         const sy = edge.center.y + edge.radius * Math.sin(edge.startAngle)
         addPoint(sx, sy)
+        const ex = edge.center.x + edge.radius * Math.cos(edge.endAngle)
+        const ey = edge.center.y + edge.radius * Math.sin(edge.endAngle)
+        addPoint(ex, ey)
       }
     }
 
@@ -157,31 +203,66 @@ export class ExpressionBuilder {
 
   toJavaExpression(expression) {
     if (!expression) return ''
-    let java = expression.trim()
-    java = java.replace(/\*\*/g, '___POW___')
-    java = java.replace(/___POW___/g, 'MATH_POW_PLACEHOLDER')
-
-    const powMatches = java.match(/MATH_POW_PLACEHOLDER/g)
-    if (powMatches) {
-      // Simple a**b patterns -> Math.pow(a, b)
-      // For complex cases the user should write Math.pow() directly
-    }
-
-    java = java.replace(/Math\.toRadians/g, 'Math.toRadians')
-    java = java.replace(/Math\.toDegrees/g, 'Math.toDegrees')
-
-    return java
+    return expression.trim()
   }
 
-  // --- Internal helpers ---
+  // ── Internal helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Find the closest matching parameter name for a typo.
+   * Uses prefix match first, then Levenshtein distance.
+   */
+  _findClosestParam(ident, parameterStore) {
+    const params = parameterStore.getParameters()
+    if (params.length === 0) return null
+
+    const lower = ident.toLowerCase()
+
+    // 1. Prefix match — "R" matches "R1", "R2", etc.
+    const prefixMatches = params.filter(p => p.name.toLowerCase().startsWith(lower))
+    if (prefixMatches.length === 1) return prefixMatches[0].name
+    if (prefixMatches.length > 1) {
+      // Pick the shortest name (most likely intended)
+      prefixMatches.sort((a, b) => a.name.length - b.name.length)
+      return prefixMatches[0].name
+    }
+
+    // 2. Params that start with the same letter
+    const sameStart = params.filter(p => p.name[0]?.toLowerCase() === lower[0])
+    if (sameStart.length === 1) return sameStart[0].name
+
+    // 3. Levenshtein distance — find closest within distance ≤ 2
+    let best = null, bestDist = 3
+    for (const p of params) {
+      const d = this._levenshtein(lower, p.name.toLowerCase())
+      if (d < bestDist) { bestDist = d; best = p.name }
+    }
+    return best
+  }
+
+  /** Simple Levenshtein distance (max len ~20 so no perf concern) */
+  _levenshtein(a, b) {
+    const m = a.length, n = b.length
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+    for (let i = 0; i <= m; i++) dp[i][0] = i
+    for (let j = 0; j <= n; j++) dp[0][j] = j
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+      }
+    }
+    return dp[m][n]
+  }
 
   _extractIdentifiers(expr) {
     const cleaned = expr
-      .replace(POINT_REF_REGEX, '')
+      .replace(new RegExp(POINT_REF_PATTERN.source, 'g'), '')
       .replace(/\d+\.?\d*/g, '')
       .replace(/[+\-*/().,<>=!&|?:%^~\s]/g, ' ')
 
-    const matches = [...cleaned.matchAll(IDENTIFIER_REGEX)]
+    const matches = [...cleaned.matchAll(new RegExp(IDENTIFIER_PATTERN.source, 'g'))]
     const identifiers = new Set()
     for (const m of matches) {
       if (m[1] && !MATH_BUILTINS.has(m[1]) && !/^p\d+$/.test(m[1])) {
@@ -193,13 +274,12 @@ export class ExpressionBuilder {
 
   _checkSyntax(expr) {
     let safe = expr
-    safe = safe.replace(POINT_REF_REGEX, '0')
-    safe = safe.replace(IDENTIFIER_REGEX, (match) => {
+    safe = safe.replace(new RegExp(POINT_REF_PATTERN.source, 'g'), '0')
+    safe = safe.replace(new RegExp(IDENTIFIER_PATTERN.source, 'g'), (match) => {
       if (MATH_BUILTINS.has(match) || RESERVED_NAMES.has(match)) return match
       if (/^p\d+$/.test(match)) return '0'
       return '0'
     })
-
     try {
       new Function(`"use strict"; return (${safe});`)
     } catch (e) {
@@ -216,7 +296,7 @@ export class ExpressionBuilder {
       const expr = pointExpressions[id]
       if (!expr) continue
       const combined = `${expr.x} ${expr.y}`
-      const refs = [...combined.matchAll(POINT_REF_REGEX)]
+      const refs = [...combined.matchAll(new RegExp(POINT_REF_PATTERN.source, 'g'))]
       for (const ref of refs) {
         const dep = `p${ref[1]}`
         if (dep !== id && ids.includes(dep)) {
@@ -243,10 +323,7 @@ export class ExpressionBuilder {
       sorted.push(id)
     }
 
-    for (const id of ids) {
-      visit(id)
-    }
-
+    for (const id of ids) visit(id)
     return sorted
   }
 }

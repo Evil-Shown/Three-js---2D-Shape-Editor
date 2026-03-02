@@ -1,12 +1,14 @@
-## GSAP Parametric Shape Editor – Tool Guide
+## GSAP Editor – Tool Guide
 
-This guide explains how to use the editor to:
+This guide is for the **2D Shape Editor** in this project (`gsap-editor/`). It explains how to:
 
-- **Draw a 2D shape**
+- **Draw a 2D shape** (lines, arcs, rectangles, circles) with snapping and constraints
 - **Turn it into a parametric shape** using named dimensions like `L`, `H`, `R1`
-- **Export JSON** for your downstream code generators
+- **Export JSON** for downstream code generators
 
 You do **not** need to be a programmer, but you do need to think in terms of **dimensions** (width, height, radii) and how they relate to the points of your shape.
+
+For project structure and maths, see **PROJECT-DOCUMENTATION.md**. For setup (MySQL, backend + frontend), scripts, and export flow, see the root **README.md**.
 
 ---
 
@@ -15,79 +17,95 @@ You do **not** need to be a programmer, but you do need to think in terms of **d
 ### 1.1 Main layout
 
 - **Top bar**
-  - Left: app name `GSAP Editor`.
-  - Middle: mode switch buttons: **Draw** / **Parameters**.
-  - Right: **File / Edit / View / Tools** menus.
+  - Left: app name **GSAP Editor**.
+  - Mode switch: **Draw** / **Parameters** (Parameters enabled only when the shape is closed).
+  - Right: **File** (New, **Export JSON** — saves to database then offers download; see §7.2), **Edit** (Undo, Redo, Select All), **View** (Zoom to Fit, Zoom In/Out), **Tools** (tool shortcuts, Toggle Arc Mode).
 
 - **Left sidebar (toolbox)**
-  - In **Draw Mode**:
+  - **Draw Mode**:
     - **DRAW**: Line, Arc, Rectangle, Circle
     - **EDIT**: Select, Move, Trim, Offset
     - **INFO**: Measure, Dimension
-  - In **Parameter Mode**:
+  - **Parameter Mode**:
     - **TAG**: Tag Edges, Tag Points
 
 - **Center (canvas)**
-  - The Three.js view where you draw the shape and see points and edges.
-  - You can pan/zoom and interact with points and edges.
+  - Three.js orthographic view: draw shapes, see points and edges, pan/zoom.
 
 - **Right sidebar**
-  - In **Draw Mode**: `PROPERTIES` – shows geometric info for the current selection.
-  - In **Parameter Mode**: `PARAMETERS` – the parametric control panel (Parameters / Points / Services / Metadata tabs).
+  - **Draw Mode**: **Properties** – selection info, measure result.
+  - **Parameter Mode**: **Parameter Panel** – Parameters / Points / Services / Metadata tabs.
 
 - **Bottom**
-  - **Command line** (currently only used in Draw Mode).
-  - **Status bar**: current coordinates, snap status, active tool, edge count, and in Parameter Mode, parameter/point coverage info.
+  - **Command line** – coordinate input and constraints in Draw Mode (see §2.5).
+  - **Status bar** – coordinates, snap on/off, active tool, edge count; in Parameter Mode, parameter/point coverage.
 
 ---
 
 ## 2. Draw Mode – creating the base shape
 
-You must first draw a closed shape before you can define parameters.
+You must first draw a **closed** shape (first and last point coincide) before you can define parameters.
 
 ### 2.1 Start a new shape
 
-- Top bar → **File → New** to clear the canvas.
+- **File → New** to clear the canvas.
 
 ### 2.2 Drawing tools
 
-- **Select tool**: pick/drag edges, delete them.
-- **Line tool**:
-  - Click to place the first point, click again to place the end.
-  - Snapping helps you hit endpoints and intersections cleanly.
-- **Rectangle tool**:
-  - Click and drag to create an axis-aligned rectangle.
-- **Arc tool**:
-  - Different modes to create circular arcs, used for rounded corners.
-
-You can always use the **Select** tool to move or delete edges.
+- **Select (S)**: Click to select edges (Shift toggles); Delete removes selected; drag to move with **Move** tool logic. Hit-test uses distance to line/arc.
+- **Line (L)**: Multi-segment. Click to place each point; double-click or **Escape** to finish. Snapping and constraints apply; tooltip shows length/angle.
+- **Arc (A)**: Two modes (toggle via **Tools → Toggle Arc Mode**): **Center–radius–angle** (center → radius point → end angle) or **3-point** (three points on the arc). Radius constraint supported (e.g. type `R75` in command bar).
+- **Rectangle (R)**: Two opposite corners (click–drag or two clicks) → four line edges (closed).
+- **Circle (C)**: Center → radius point; stored as full arc; radius constraint (e.g. `R50`) supported.
+- **Move (M)**: Uses current selection. Pick base point, then destination; all selected edges move by that delta (lines: start/end; arcs: center).
+- **Trim (T)**: Click near a **line** edge. Editor finds line–line intersections, picks the closest to the click, and trims the edge to that point (keeps the side opposite the click).
+- **Offset (O)**: Click a **line** edge, then type offset distance in the command bar (e.g. `L20`). Creates a parallel line offset by that distance (perpendicular left).
+- **Measure (Q)**: Two points → distance, angle (degrees), ΔX, ΔY shown in the Properties panel.
+- **Dimension (D)**: Two points + label position → dimension line and text on the annotation layer (value in mm).
 
 ### 2.3 Pan, zoom, snapping
 
-- **Pan**: middle-mouse drag.
-- **Zoom**:
-  - Mouse wheel, or
-  - View → Zoom In / Zoom Out, or
-  - `+` / `-` keys.
-- **Zoom to fit**:
-  - View → **Zoom to Fit** or press **F**.
+- **Pan**: Middle-mouse (or right-mouse) drag.
+- **Zoom**: Mouse wheel, or **View → Zoom In / Zoom Out**, or **+** / **-** keys.
+- **Zoom to fit**: **View → Zoom to Fit** or press **F**.
+- **Snap**: On by default. Press **Space** to toggle. Snapping includes: endpoint, midpoint, center, intersection (line–line, line–arc, arc–arc), perpendicular, tangent, angle increment, grid.
 
-Snapping is always on by default (endpoints, midpoints, intersections, etc.) so lines and arcs connect precisely.
+### 2.4 Keyboard shortcuts (Draw Mode)
 
-### 2.4 Shape must be closed
+- **Escape**: Cancel current tool, then switch to Select.
+- **Ctrl+Z** / **Ctrl+Y**: Undo / Redo (max 200 steps).
+- **Delete**: Remove selected edges.
+- **Ctrl+A**: Select all edges.
+- **F**: Zoom to fit. **Space**: Toggle snap.
+- Tool keys: **S** Select, **L** Line, **A** Arc, **R** Rectangle, **C** Circle, **M** Move, **T** Trim, **O** Offset, **Q** Measure, **D** Dimension.
+
+### 2.5 Command line (Draw Mode)
+
+The command line at the bottom accepts:
+
+- **Absolute coordinates**: `100,80` → point (100, 80) in mm.
+- **Relative**: `@50,30` → previous point + (50, 30).
+- **Polar**: `@100<45` → previous point + 100 mm at 45°.
+- **Length constraint**: `L150` → constrain next point to distance 150 from previous (e.g. Line/Arc).
+- **Angle constraint**: `A45` → constrain next direction to 45°.
+- **Radius constraint**: `R75` → constrain arc/circle radius to 75 mm.
+
+*Previous point* is the last placed point (e.g. last point of the current line, or arc center).
+
+### 2.6 Shape must be closed
 
 Before you can switch to Parameter Mode:
 
-- The shape must be **closed** – the last edge must end exactly where the first edge starts.
-- Use the **Line** or **Rectangle** tools with snapping so that the final point snaps onto the start point.
+- The shape must be **closed**: the last edge must end at the first edge’s start (within 0.5 mm).
+- Use snapping so the final point snaps onto the start point.
 
 If the shape is not closed:
 
-- The **Parameters** button in the top toolbar is disabled.
-- Hovering over it will show a tooltip:  
+- The **Parameters** button is disabled.
+- Hovering shows the tooltip (shape must be closed to enable Parameters).  
   **“Shape must be closed before defining parameters”**.
 
-Once the shape is closed, you can move on to defining parameters.
+Once the shape is closed, you can define parameters.
 
 ---
 
@@ -97,14 +115,14 @@ After drawing and closing your shape:
 
 1. Click the **Parameters** button in the top toolbar.
 2. The UI changes:
-   - Left toolbox switches to **Tag Edges** and **Tag Points**.
-   - Right sidebar changes to the **Parameter Panel** with four tabs:
+   - Left toolbox switches to **Tag Edges (E)** and **Tag Points (P)**.
+   - Right sidebar shows the **Parameter Panel** with four tabs:
      - **Parameters**
      - **Points**
      - **Services**
      - **Metadata**
 
-You are now working on the **parametric definition** of the shape (semantic meaning), not the raw geometry.
+You are now working on the **parametric definition** of the shape (semantic meaning), not the raw geometry. In Parameter Mode, **E** = Tag Edges, **P** = Tag Points; **Escape** cancels and returns to Draw Mode.
 
 ---
 
@@ -114,12 +132,13 @@ The **Parameters** tab is where you define human-readable dimensions (like `L`, 
 
 Each parameter has:
 
-- **Name** (e.g. `L`, `H`, `R1`)
+- **Name** (e.g. `L`, `H`, `R1`) – must be a valid Java identifier (used in generated code).
 - **Type**:
-  - `LINEAR` – distances in mm (width, height, offsets)
+  - `LINEAR` – distances in mm (width, height, length)
   - `RADIUS` – arc radii in mm
   - `ANGLE` – angles in degrees
-- **Default value** – numeric value (e.g. 200)
+  - `DERIVED` – computed from other parameters (expression field)
+- **Default value** – numeric (e.g. 200); for DERIVED, an expression references other parameters.
 - **Description** – optional text for humans (e.g. “Overall width”)
 
 ### 4.1 Adding a parameter
@@ -131,8 +150,8 @@ Each parameter has:
      - `L` – overall width  
      - `H` – overall height  
      - `R1` / `R2` / `R3` / `R4` – corner radii, etc.
-   - **Type**:
-     - Choose `LINEAR`, `RADIUS`, or `ANGLE`.
+  - **Type**:
+    - Choose `LINEAR`, `RADIUS`, `ANGLE`, or `DERIVED` (then set expression).
    - **Default value**: numeric, e.g. `200` for 200 mm.
    - **Description**: e.g. “Width of the panel”.
 4. Press **Enter** or click **Add**.
@@ -343,22 +362,24 @@ At the bottom of the Parameter Panel:
 
 You should fix all **errors** before generating.
 
-### 7.2 Generate JSON
+### 7.2 Generate JSON / File → Export JSON
 
-Once validation passes with **no errors**:
+Once validation passes with **no errors** (or from Draw Mode with geometry only), you can export via:
 
-- The **Generate** button becomes enabled.
-- Clicking **Generate**:
-  - Assembles a JSON payload with:
-    - Original edges.
-    - `shapeMetadata`
-    - `parameters`
-    - `pointExpressions`
-    - `edgeServices`
-  - Downloads a `.json` file.
-  - The file name is based on the **Class Name** if set, otherwise it falls back to a default name.
+- **Parameter Panel:** Click **Generate JSON** (or "✓ Generate JSON" when valid).
+- **Menu:** **File → Export JSON**.
 
-You can then feed this JSON into your backend/Java generator to create a `ShapeTransformer_XXX.java` file.
+**What happens:**
+
+1. **Payload is built** from the canvas geometry (and in Parameter Mode: edges with ids, `shapeMetadata`, `parameters`, `pointExpressions`, `edgeServices`, trim definition).
+2. **"Saving to database…"** — A loading toast appears (bottom-right).
+3. The shape is **POSTed to MySQL** via the backend API (`/api/shapes`). The backend must be running (see root README for `server/` setup).
+4. **Success:** A **"shape saved to database!"** success toast appears (auto-dismisses). A **"Saved to Database"** modal opens with:
+   - **No, thanks** — Closes the modal; the JSON remains only in the database.
+   - **⬇ Download JSON** — Triggers a `.json` file download (filename from Class Name or shape name) and closes the modal.
+5. **If the backend is unreachable:** An error toast is shown (e.g. "Could not reach database: …"). The modal still opens so you can choose **⬇ Download JSON** to save the file locally.
+
+You can then feed the JSON into your backend/Java generator to create a `ShapeTransformer_XXX.java` file.
 
 ---
 

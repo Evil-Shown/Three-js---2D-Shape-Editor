@@ -1,9 +1,18 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { ParameterType, PARAM_TYPE_META, SERVICE_LABELS, SERVICE_COLORS, POINT_STATUS_COLORS } from '../parameters/ParameterTypes.js'
+// src/components/ParameterPanel.jsx
+//
+// Right panel with tabs: Parameters, Points (delegated to PointAssignmentPanel),
+// Services, and Metadata. Includes validation and generation controls.
+
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import {
+  ParameterType, PARAM_TYPE_META,
+  SERVICE_LABELS, SERVICE_COLORS,
+} from '../parameters/ParameterTypes.js'
 import ParameterRow from './ParameterRow.jsx'
-import ExpressionInput from './ExpressionInput.jsx'
+import PointAssignmentPanel from './PointAssignmentPanel.jsx'
 import { ExpressionBuilder } from '../parameters/ExpressionBuilder.js'
 import { ExpressionValidator } from '../parameters/ExpressionValidator.js'
+import { AutoAssignService } from '../parameters/AutoAssignService.js'
 import { bus } from '../core/EventBus.js'
 
 export default function ParameterPanel({
@@ -13,46 +22,59 @@ export default function ParameterPanel({
   edgeTagger,
   onGenerate,
 }) {
-  const [, forceUpdate] = useState(0)
+  const [, forceUpdate]         = useState(0)
   const [addingParam, setAddingParam] = useState(false)
   const [newParam, setNewParam] = useState({ name: '', type: 'LINEAR', defaultValue: 0, description: '' })
   const [validationResult, setValidationResult] = useState(null)
   const [activeSection, setActiveSection] = useState('params')
   const [focusedParamName, setFocusedParamName] = useState(null)
-  const [selectedPointId, setSelectedPointId] = useState(null)
-  const [pointExprX, setPointExprX] = useState('')
-  const [pointExprY, setPointExprY] = useState('')
 
-  const builderRef = useRef(new ExpressionBuilder())
+  const builderRef   = useRef(new ExpressionBuilder())
   const validatorRef = useRef(new ExpressionValidator())
+  const autoRef      = useRef(new AutoAssignService())
 
   useEffect(() => {
     const unsub = paramStore.onChange(() => forceUpdate(n => n + 1))
     return unsub
   }, [paramStore])
 
-  const params = paramStore.getParameters()
-  const shapePoints = pointTagger ? pointTagger.getShapePoints() : []
-  const pointExprs = paramStore.getAllPointExpressions()
-  const edgeServices = paramStore.getAllEdgeServices()
-  const edges = geometryStore.getEdges()
-  const meta = paramStore.getShapeMetadata()
-  const trim = paramStore.getTrimDefinition()
-
-  // --- Point selection from canvas ---
+  // Switch to Points tab on canvas point click
   useEffect(() => {
-    const handlePointSelect = (data) => {
-      setSelectedPointId(data.pointId)
+    const handlePointSelect = () => {
       setActiveSection('points')
-      const expr = paramStore.getPointExpression(data.pointId)
-      setPointExprX(expr?.x || '')
-      setPointExprY(expr?.y || '')
     }
     const unsub = bus.on('pointTagger:selectPoint', handlePointSelect)
     return () => unsub()
-  }, [paramStore])
+  }, [])
 
-  // --- Parameter CRUD ---
+  // Auto-fill missing expressions when Points tab opens
+  useEffect(() => {
+    if (activeSection !== 'points') return
+    const count = autoRef.current.autoAssignMissing(paramStore, geometryStore)
+    if (count > 0 && pointTagger) pointTagger.refreshIndicators()
+  }, [activeSection, paramStore, geometryStore, pointTagger])
+
+  const shapePoints = useMemo(
+    () => builderRef.current.extractShapePoints(geometryStore),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [geometryStore, paramStore.version]
+  )
+
+  // ── Derived state ──────────────────────────────────────────────────────────
+  const params      = paramStore.getParameters()
+  const pointExprs  = paramStore.getAllPointExpressions()
+  const edgeServices = paramStore.getAllEdgeServices()
+  const edges       = geometryStore.getEdges()
+  const meta        = paramStore.getShapeMetadata()
+  const trim        = paramStore.getTrimDefinition()
+
+  const verifiedCount = shapePoints.filter(pt => {
+    const s = pointTagger ? pointTagger.getPointStatus(pt.id) : 'unset'
+    return s === 'verified'
+  }).length
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
   const handleAddParam = () => {
     try {
       paramStore.addParameter(
@@ -62,31 +84,17 @@ export default function ParameterPanel({
       )
       setNewParam({ name: '', type: 'LINEAR', defaultValue: 0, description: '' })
       setAddingParam(false)
-    } catch (e) {
-      alert(e.message)
-    }
-  }
-
-  const handleUpdateParam = (id, fields) => {
-    paramStore.updateParameter(id, fields)
+    } catch (e) { alert(e.message) }
   }
 
   const handleDeleteParam = (id) => {
-    try {
-      paramStore.removeParameter(id)
-    } catch (e) {
-      alert(e.message)
-    }
+    try { paramStore.removeParameter(id) } catch (e) { alert(e.message) }
   }
 
   const isParamReferenced = (name) => {
-    const allExprs = paramStore.getAllPointExpressions()
     const regex = new RegExp(`\\b${name}\\b`)
-    for (const expr of Object.values(allExprs)) {
+    for (const expr of Object.values(paramStore.getAllPointExpressions())) {
       if (regex.test(expr.x) || regex.test(expr.y)) return true
-    }
-    for (const p of params) {
-      if (p.type === ParameterType.DERIVED && p.expression && regex.test(p.expression)) return true
     }
     return false
   }
@@ -102,21 +110,12 @@ export default function ParameterPanel({
     return Array.from(usage)
   }
 
-  // --- Point expression save ---
-  const savePointExpression = useCallback(() => {
-    if (!selectedPointId) return
-    paramStore.setPointExpression(selectedPointId, pointExprX, pointExprY)
+  const handleAutoAssignAll = () => {
+    const stats = autoRef.current.autoAssignAll(paramStore, geometryStore)
     if (pointTagger) pointTagger.refreshIndicators()
-  }, [selectedPointId, pointExprX, pointExprY, paramStore, pointTagger])
-
-  const selectPoint = (ptId) => {
-    setSelectedPointId(ptId)
-    const expr = paramStore.getPointExpression(ptId)
-    setPointExprX(expr?.x || '')
-    setPointExprY(expr?.y || '')
+    setValidationResult(null)
   }
 
-  // --- Validation ---
   const runValidation = () => {
     const result = validatorRef.current.validate(paramStore, geometryStore)
     setValidationResult(result)
@@ -125,41 +124,44 @@ export default function ParameterPanel({
 
   const handleGenerate = () => {
     const result = runValidation()
-    if (result.isValid) {
-      onGenerate?.()
-    }
+    if (result.isValid) onGenerate?.()
   }
 
-  // --- Expression validation helper ---
-  const validateExpr = (expr) => {
-    if (!expr.trim()) return null
-    const result = builderRef.current.validate(expr, paramStore)
-    return result.isValid
+  // One-click: auto-assign everything then generate immediately
+  const handleQuickGenerate = () => {
+    handleAutoAssignAll()
+    setTimeout(() => {
+      const result = runValidation()
+      if (result.isValid) onGenerate?.()
+    }, 100)
   }
 
-  const isP0 = selectedPointId === 'p0'
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div style={panelStyle}>
-      {/* Section Tabs */}
+
+      {/* Tab bar */}
       <div style={tabBarStyle}>
-        {['params', 'points', 'services', 'meta'].map(s => (
+        {[
+          { id: 'params',   label: 'Parameters' },
+          { id: 'points',   label: `Points ${verifiedCount}/${shapePoints.length}` },
+          { id: 'services', label: 'Services' },
+          { id: 'meta',     label: 'Metadata' },
+        ].map(({ id, label }) => (
           <button
-            key={s}
-            style={{
-              ...tabBtnStyle,
-              ...(activeSection === s ? tabBtnActiveStyle : {}),
-            }}
-            onClick={() => setActiveSection(s)}
+            key={id}
+            style={{ ...tabBtnStyle, ...(activeSection === id ? tabBtnActiveStyle : {}) }}
+            onClick={() => setActiveSection(id)}
           >
-            {s === 'params' ? 'Parameters' : s === 'points' ? 'Points' : s === 'services' ? 'Services' : 'Metadata'}
+            {label}
           </button>
         ))}
       </div>
 
       <div style={sectionBodyStyle}>
 
-        {/* ======================== PARAMETERS SECTION ======================== */}
+        {/* ════════════════════════ PARAMETERS ════════════════════════════════ */}
         {activeSection === 'params' && (
           <div>
             <div style={sectionHeaderStyle}>
@@ -167,24 +169,38 @@ export default function ParameterPanel({
               <button style={addBtnStyle} onClick={() => setAddingParam(true)}>+ Add</button>
             </div>
 
+            {params.length === 0 && !addingParam && (
+              <div style={tipsBoxStyle}>
+                <div style={{ fontWeight: 700, color: '#7fffd4', marginBottom: 6 }}>Getting started</div>
+                <div>Add parameters to describe your shape's dimensions:</div>
+                <div style={{ marginTop: 4, color: '#aaa' }}>
+                  • <b>L</b> — overall width (LINEAR)<br />
+                  • <b>H</b> — overall height (LINEAR)<br />
+                  • <b>R1</b> — corner radius (RADIUS)
+                </div>
+                <div style={{ marginTop: 6, color: '#888' }}>
+                  Then go to the <b>Points</b> tab and click <b>Auto-Assign All</b>.
+                </div>
+              </div>
+            )}
+
             {params.map((p) => {
               const usagePoints = getParamUsagePoints(p.name)
               const usageLabel = usagePoints.length
                 ? `Used in: ${usagePoints.join(', ')}`
                 : 'Not used in any point yet'
-              const isFocused = focusedParamName === p.name
               return (
-              <ParameterRow
+                <ParameterRow
                   key={p.id}
                   param={p}
-                  onUpdate={handleUpdateParam}
+                  onUpdate={(id, fields) => paramStore.updateParameter(id, fields)}
                   onDelete={handleDeleteParam}
                   isReferenced={isParamReferenced(p.name)}
                   referenceInfo={usageLabel}
                   usageLabel={usageLabel}
-                  focused={isFocused}
+                  focused={focusedParamName === p.name}
                   onFocus={() =>
-                    setFocusedParamName(prev => (prev === p.name ? null : p.name))
+                    setFocusedParamName(prev => prev === p.name ? null : p.name)
                   }
                 />
               )
@@ -192,12 +208,15 @@ export default function ParameterPanel({
 
             {addingParam && (
               <div style={addFormStyle}>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>
+                  Name must be a valid Java identifier (e.g. L, H, R1, widthLeft)
+                </div>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   <input
-                    style={addInputStyle}
+                    style={{ ...addInputStyle, width: 72 }}
                     value={newParam.name}
                     onChange={e => setNewParam(p => ({ ...p, name: e.target.value }))}
-                    placeholder="Name (e.g. L, R1)"
+                    placeholder="Name"
                     autoFocus
                     onKeyDown={e => {
                       if (e.key === 'Enter') handleAddParam()
@@ -205,16 +224,16 @@ export default function ParameterPanel({
                     }}
                   />
                   <select
-                    style={{ ...addInputStyle, width: 80 }}
+                    style={{ ...addInputStyle, width: 90 }}
                     value={newParam.type}
                     onChange={e => setNewParam(p => ({ ...p, type: e.target.value }))}
                   >
-                    {Object.values(ParameterType).filter(t => t !== 'OFFSET').map(t => (
+                    {['LINEAR', 'RADIUS', 'ANGLE', 'DERIVED'].map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                   <input
-                    style={{ ...addInputStyle, width: 56 }}
+                    style={{ ...addInputStyle, width: 60 }}
                     type="number"
                     value={newParam.defaultValue}
                     onChange={e => setNewParam(p => ({ ...p, defaultValue: e.target.value }))}
@@ -225,10 +244,10 @@ export default function ParameterPanel({
                     }}
                   />
                   <input
-                    style={{ ...addInputStyle, flex: 1, minWidth: 60 }}
+                    style={{ ...addInputStyle, flex: 1, minWidth: 80 }}
                     value={newParam.description}
                     onChange={e => setNewParam(p => ({ ...p, description: e.target.value }))}
-                    placeholder="Description"
+                    placeholder="Description (optional)"
                     onKeyDown={e => {
                       if (e.key === 'Enter') handleAddParam()
                       if (e.key === 'Escape') setAddingParam(false)
@@ -241,139 +260,20 @@ export default function ParameterPanel({
                 </div>
               </div>
             )}
-
-            {params.length === 0 && !addingParam && (
-              <div style={emptyStateStyle}>
-                No parameters defined yet. Click "+ Add" to define shape dimensions.
-              </div>
-            )}
           </div>
         )}
 
-        {/* ======================== POINTS SECTION ======================== */}
+        {/* ════════════════════════ POINTS ══════════════════════════════════════ */}
         {activeSection === 'points' && (
-          <div>
-            <div style={sectionHeaderStyle}>
-              <span>
-                Point Expressions ({Object.keys(pointExprs).length}/{shapePoints.length})
-                {focusedParamName && (
-                  <span style={{ color: '#cccc44', fontSize: 11, marginLeft: 8 }}>
-                    highlighting usage of <span style={{ color: '#ffdd66' }}>{focusedParamName}</span>
-                  </span>
-                )}
-              </span>
-              <button style={addBtnStyle} onClick={runValidation}>Verify All</button>
-            </div>
-
-            {/* Point list */}
-            <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 8 }}>
-              {shapePoints.map(pt => {
-                const status = pointTagger ? pointTagger.getPointStatus(pt.id) : 'unset'
-                const statusColor = POINT_STATUS_COLORS[status] || '#666'
-                const expr = pointExprs[pt.id]
-                const isSelected = pt.id === selectedPointId
-                const isUsingFocusedParam =
-                  focusedParamName &&
-                  (() => {
-                    if (!expr) return false
-                    const rx = new RegExp(`\\b${focusedParamName}\\b`)
-                    return (expr.x && rx.test(expr.x)) || (expr.y && rx.test(expr.y))
-                  })()
-
-                return (
-                  <div
-                    key={pt.id}
-                    style={{
-                      ...pointRowStyle,
-                      borderColor: isSelected
-                        ? '#7fffd4'
-                        : isUsingFocusedParam
-                          ? '#cccc44'
-                          : '#2a2d30',
-                      background: isSelected
-                        ? '#1a2e28'
-                        : isUsingFocusedParam
-                          ? '#252820'
-                          : '#1e2124',
-                    }}
-                    onClick={() => selectPoint(pt.id)}
-                  >
-                    <span style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: statusColor,
-                      display: 'inline-block', marginRight: 6, flexShrink: 0,
-                    }} />
-                    <span style={{ color: '#7fffd4', fontFamily: 'monospace', fontWeight: 700, fontSize: 12, minWidth: 24 }}>
-                      {pt.id}
-                    </span>
-                    <span style={{ color: '#666', fontSize: 11, marginLeft: 4 }}>
-                      ({pt.x.toFixed(1)}, {pt.y.toFixed(1)})
-                    </span>
-                    {expr && (
-                      <span style={{ color: '#888', fontSize: 10, fontFamily: 'monospace', marginLeft: 'auto', textAlign: 'right', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {expr.x}, {expr.y}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Expression editor for selected point */}
-            {selectedPointId && (
-              <div style={expressionEditorStyle}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#7fffd4', marginBottom: 6 }}>
-                  {selectedPointId}
-                  {(() => {
-                    const sp = shapePoints.find(p => p.id === selectedPointId)
-                    return sp ? (
-                      <span style={{ color: '#666', fontWeight: 400, fontSize: 11, marginLeft: 8 }}>
-                        drawn at ({sp.x.toFixed(2)}, {sp.y.toFixed(2)})
-                      </span>
-                    ) : null
-                  })()}
-                </div>
-
-                {isP0 ? (
-                  <div style={{ color: '#ff8844', fontSize: 12, padding: '8px 0' }}>
-                    p0 is always the trim origin: x = trimLeft, y = trimBottom (auto-assigned)
-                  </div>
-                ) : (
-                  <>
-                    <ExpressionInput
-                      label="X Expression"
-                      value={pointExprX}
-                      onChange={(v) => setPointExprX(v)}
-                      onValidate={validateExpr}
-                      placeholder="e.g. p0.x + L"
-                    />
-                    <ExpressionInput
-                      label="Y Expression"
-                      value={pointExprY}
-                      onChange={(v) => setPointExprY(v)}
-                      onValidate={validateExpr}
-                      placeholder="e.g. p0.y + R1"
-                    />
-                    <button
-                      style={{ ...confirmBtnStyle, width: '100%', marginTop: 6 }}
-                      onClick={savePointExpression}
-                    >
-                      Save Expression
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
-            {shapePoints.length === 0 && (
-              <div style={emptyStateStyle}>
-                No shape points detected. Draw a closed shape in Draw Mode first.
-              </div>
-            )}
-          </div>
+          <PointAssignmentPanel
+            paramStore={paramStore}
+            geometryStore={geometryStore}
+            pointTagger={pointTagger}
+            onValidate={runValidation}
+          />
         )}
 
-        {/* ======================== SERVICES SECTION ======================== */}
+        {/* ════════════════════════ SERVICES ═══════════════════════════════════ */}
         {activeSection === 'services' && (
           <div>
             <div style={sectionHeaderStyle}>
@@ -381,28 +281,25 @@ export default function ParameterPanel({
             </div>
 
             <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 8 }}>
-              {edges.map((edge, idx) => {
+              {edges.map((edge) => {
                 const svc = edgeServices[edge.id] || null
-                const svcColor = svc ? SERVICE_COLORS[svc] : '#666'
+                const svcColor = svc ? SERVICE_COLORS[svc] : '#555'
                 const len = edge.type === 'line'
                   ? Math.hypot(edge.end.x - edge.start.x, edge.end.y - edge.start.y)
                   : edge.radius * Math.abs(edge.endAngle - edge.startAngle)
 
                 return (
                   <div key={edge.id} style={edgeRowStyle}>
-                    <span style={{ color: svcColor, fontWeight: 700, fontSize: 12, minWidth: 22 }}>
+                    <span style={{ color: svcColor, fontWeight: 700, fontSize: 12, minWidth: 24 }}>
                       {svc || '—'}
                     </span>
-                    <span style={{ color: '#aaa', fontSize: 12, minWidth: 50 }}>
+                    <span style={{ color: '#888', fontSize: 11, minWidth: 56, fontFamily: 'monospace' }}>
                       {edge.id}
                     </span>
-                    <span style={{
-                      fontSize: 11, color: edge.type === 'arc' ? '#ff88cc' : '#88aaff',
-                      minWidth: 30,
-                    }}>
+                    <span style={{ fontSize: 10, color: edge.type === 'arc' ? '#ff88cc' : '#88aaff' }}>
                       {edge.type === 'arc' ? '◠ arc' : '╱ line'}
                     </span>
-                    <span style={{ color: '#666', fontSize: 11, marginLeft: 'auto' }}>
+                    <span style={{ color: '#555', fontSize: 10, marginLeft: 'auto' }}>
                       {len.toFixed(1)}mm
                     </span>
                     <select
@@ -410,11 +307,8 @@ export default function ParameterPanel({
                       value={svc || ''}
                       onChange={(e) => {
                         const val = e.target.value || null
-                        if (edgeTagger) {
-                          edgeTagger.tagEdge(edge.id, val)
-                        } else {
-                          paramStore.setEdgeService(edge.id, val)
-                        }
+                        if (edgeTagger) edgeTagger.tagEdge(edge.id, val)
+                        else paramStore.setEdgeService(edge.id, val)
                       }}
                     >
                       <option value="">None</option>
@@ -427,9 +321,8 @@ export default function ParameterPanel({
               })}
             </div>
 
-            {/* Trim definition */}
             <div style={{ ...sectionHeaderStyle, marginTop: 8 }}>Trim Definition</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Trim Bottom</label>
                 <select
@@ -454,81 +347,110 @@ export default function ParameterPanel({
           </div>
         )}
 
-        {/* ======================== METADATA SECTION ======================== */}
+        {/* ════════════════════════ METADATA ═══════════════════════════════════ */}
         {activeSection === 'meta' && (
           <div>
             <div style={sectionHeaderStyle}>Shape Metadata</div>
-            <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>Class Name</label>
-              <input
-                style={metaInputStyle}
-                value={meta.className}
-                onChange={(e) => paramStore.setShapeMetadata({ className: e.target.value })}
-                placeholder="ShapeTransformer_139"
-              />
-            </div>
-            <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>Shape Number</label>
-              <input
-                style={metaInputStyle}
-                value={meta.shapeNumber}
-                onChange={(e) => paramStore.setShapeMetadata({ shapeNumber: e.target.value })}
-                placeholder="139"
-              />
-            </div>
-            <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>Package Name</label>
-              <input
-                style={metaInputStyle}
-                value={meta.packageName}
-                onChange={(e) => paramStore.setShapeMetadata({ packageName: e.target.value })}
-                placeholder="com.core.shape.transformer.impl"
-              />
-            </div>
+            {[
+              { key: 'className',   label: 'Class Name',    placeholder: 'ShapeTransformer_139' },
+              { key: 'shapeNumber', label: 'Shape Number',  placeholder: '139' },
+              { key: 'packageName', label: 'Package Name',  placeholder: 'com.core.shape.transformer.impl' },
+            ].map(({ key, label, placeholder }) => (
+              <div key={key} style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>{label}</label>
+                <input
+                  style={metaInputStyle}
+                  value={meta[key]}
+                  onChange={(e) => paramStore.setShapeMetadata({ [key]: e.target.value })}
+                  placeholder={placeholder}
+                />
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* ======================== BOTTOM BAR ======================== */}
+      {/* ════════════════════════ BOTTOM BAR ════════════════════════════════════ */}
       <div style={bottomBarStyle}>
         {validationResult && (
           <div style={{
-            padding: '6px 8px', marginBottom: 6, borderRadius: 4,
-            background: validationResult.isValid ? '#1a2e1a' : '#2e1a1a',
-            border: `1px solid ${validationResult.isValid ? '#44cc66' : '#ff4444'}`,
-            fontSize: 11, maxHeight: 120, overflowY: 'auto',
+            padding: '7px 8px', marginBottom: 6, borderRadius: 4,
+            background: validationResult.isValid
+              ? (validationResult.warnings.length > 0 ? '#1a1a08' : '#0f1e10')
+              : '#1e0f0f',
+            border: `1px solid ${validationResult.isValid
+              ? (validationResult.warnings.length > 0 ? '#aaaa33' : '#44cc66')
+              : '#cc4444'}`,
+            fontSize: 11, maxHeight: 160, overflowY: 'auto',
           }}>
-            <div style={{ fontWeight: 700, color: validationResult.isValid ? '#44cc66' : '#ff4444', marginBottom: 4 }}>
-              {validationResult.isValid ? '✓ Validation Passed' : `✗ ${validationResult.errors.length} Error(s)`}
+            <div style={{
+              fontWeight: 700, marginBottom: 4,
+              color: validationResult.isValid
+                ? (validationResult.warnings.length > 0 ? '#cccc44' : '#44cc66')
+                : '#ff5555',
+            }}>
+              {validationResult.isValid
+                ? (validationResult.warnings.length > 0
+                  ? `✓ Ready to generate  ·  ${validationResult.warnings.length} tip${validationResult.warnings.length > 1 ? 's' : ''}`
+                  : '✓ Perfect — ready to generate')
+                : `✗ ${validationResult.errors.length} error${validationResult.errors.length > 1 ? 's' : ''} — fix to continue`}
             </div>
             {validationResult.errors.map((e, i) => (
-              <div key={i} style={{ color: '#ff8888', fontSize: 10, marginBottom: 2 }}>• {e.message}</div>
+              <div key={i} style={{ color: '#ff9090', fontSize: 10, marginBottom: 2 }}>
+                ✗ {e.message}
+              </div>
             ))}
             {validationResult.warnings.map((w, i) => (
-              <div key={i} style={{ color: '#cccc44', fontSize: 10, marginBottom: 2 }}>⚠ {w.message}</div>
+              <div key={i} style={{ color: '#aaaa44', fontSize: 10, marginBottom: 2 }}>
+                ⚠ {w.message}
+              </div>
             ))}
-            <div style={{ color: '#888', fontSize: 10, marginTop: 4 }}>
-              Points: {validationResult.summary.assignedPoints}/{validationResult.summary.totalPoints} |
-              Params: {validationResult.summary.totalParameters} |
-              Services: {validationResult.summary.assignedServices}/{validationResult.summary.totalEdges}
+            <div style={{ color: '#555', fontSize: 10, marginTop: 4, borderTop: '1px solid #333', paddingTop: 4 }}>
+              {validationResult.summary.assignedPoints}/{validationResult.summary.totalPoints} pts assigned ·
+              {' '}{validationResult.summary.totalParameters} params ·
+              {' '}{validationResult.summary.assignedServices}/{validationResult.summary.totalEdges} edges tagged
             </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button style={validateBtnStyle} onClick={runValidation}>
-            Validate
+        <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+          <button
+            style={{ ...autoAssignBtnStyle, flex: 1, fontSize: 11, padding: '6px 8px' }}
+            onClick={handleQuickGenerate}
+            title="Auto-assign all points, validate, and generate in one click"
+          >
+            ⚡ One-Click Generate
           </button>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button style={validateBtnStyle} onClick={runValidation}>Validate</button>
           <button
             style={{
               ...generateBtnStyle,
-              opacity: (validationResult && validationResult.isValid) ? 1 : 0.4,
-              cursor: (validationResult && validationResult.isValid) ? 'pointer' : 'not-allowed',
+              // Enable when: validated + no errors (warnings are OK)
+              opacity: validationResult
+                ? (validationResult.errors.length === 0 ? 1 : 0.35)
+                : 0.55,
+              cursor: validationResult
+                ? (validationResult.errors.length === 0 ? 'pointer' : 'not-allowed')
+                : 'pointer',
+              background: validationResult?.warnings?.length > 0 && validationResult?.isValid
+                ? '#2a2a10'
+                : '#1a3328',
+              borderColor: validationResult?.warnings?.length > 0 && validationResult?.isValid
+                ? '#cccc44'
+                : '#7fffd4',
+              color: validationResult?.warnings?.length > 0 && validationResult?.isValid
+                ? '#cccc44'
+                : '#7fffd4',
             }}
             onClick={handleGenerate}
-            disabled={!validationResult || !validationResult.isValid}
+            disabled={validationResult ? validationResult.errors.length > 0 : false}
+            title={validationResult?.errors?.length > 0
+              ? `Blocked by ${validationResult.errors.length} error(s) — click Validate to see details`
+              : 'Validate then generate JSON'}
           >
-            Generate
+            {!validationResult ? 'Generate JSON' : validationResult.isValid ? '✓ Generate JSON' : '✗ Fix Errors First'}
           </button>
         </div>
       </div>
@@ -536,208 +458,118 @@ export default function ParameterPanel({
   )
 }
 
-// --- Styles ---
+// ── Styles ────────────────────────────────────────────────────────────────────
 
-const panelStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  height: '100%',
-  overflow: 'hidden',
-}
+const panelStyle = { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }
 
-const tabBarStyle = {
-  display: 'flex',
-  borderBottom: '1px solid #2a2d30',
-  marginBottom: 8,
-  gap: 0,
-}
+const tabBarStyle = { display: 'flex', borderBottom: '1px solid #2a2d30', gap: 0, flexShrink: 0 }
 
 const tabBtnStyle = {
-  flex: 1,
-  padding: '6px 4px',
-  background: 'transparent',
-  border: 'none',
+  flex: 1, padding: '7px 2px',
+  background: 'transparent', border: 'none',
   borderBottom: '2px solid transparent',
-  color: '#888',
-  fontSize: 11,
-  fontWeight: 600,
-  cursor: 'pointer',
-  transition: 'all 0.15s',
+  color: '#666', fontSize: 11, fontWeight: 600,
+  cursor: 'pointer', whiteSpace: 'nowrap',
 }
+const tabBtnActiveStyle = { color: '#7fffd4', borderBottomColor: '#7fffd4' }
 
-const tabBtnActiveStyle = {
-  color: '#7fffd4',
-  borderBottomColor: '#7fffd4',
-}
-
-const sectionBodyStyle = {
-  flex: 1,
-  overflowY: 'auto',
-  paddingBottom: 8,
-}
+const sectionBodyStyle = { flex: 1, overflowY: 'auto', paddingBottom: 8 }
 
 const sectionHeaderStyle = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  color: '#7fffd4',
-  fontWeight: 600,
-  fontSize: 12,
-  marginBottom: 8,
-  paddingBottom: 4,
+  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  color: '#7fffd4', fontWeight: 600, fontSize: 12,
+  marginBottom: 8, paddingBottom: 4,
   borderBottom: '1px solid #2a2d30',
-  letterSpacing: 0.5,
 }
 
 const addBtnStyle = {
-  padding: '2px 10px',
-  background: '#1a3328',
+  padding: '3px 10px',
+  background: '#1a3328', border: '1px solid #7fffd4',
+  borderRadius: 4, color: '#7fffd4',
+  fontSize: 11, fontWeight: 600, cursor: 'pointer',
+}
+
+const autoAssignBtnStyle = {
+  flex: 2, padding: '7px 10px',
+  background: 'linear-gradient(135deg, #1a3328, #1e2e3a)',
   border: '1px solid #7fffd4',
-  borderRadius: 4,
-  color: '#7fffd4',
-  fontSize: 11,
-  fontWeight: 600,
-  cursor: 'pointer',
+  borderRadius: 5, color: '#7fffd4',
+  fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  letterSpacing: 0.3,
+}
+
+const tipsBoxStyle = {
+  padding: '10px 12px', borderRadius: 6,
+  background: '#1a1c1e', border: '1px dashed #2a2d30',
+  color: '#888', fontSize: 11, lineHeight: 1.7,
+  marginBottom: 8,
 }
 
 const addFormStyle = {
-  padding: 8,
-  background: '#252830',
-  borderRadius: 6,
-  border: '1px solid #3a3d42',
+  padding: 10, background: '#252830',
+  borderRadius: 6, border: '1px solid #3a3d42',
   marginBottom: 4,
 }
 
 const addInputStyle = {
-  padding: '4px 6px',
-  background: '#1a1c1e',
-  border: '1px solid #3a3d42',
-  borderRadius: 3,
-  color: '#e0e3e6',
-  fontSize: 12,
-  outline: 'none',
-  width: 60,
+  padding: '4px 6px', background: '#1a1c1e',
+  border: '1px solid #3a3d42', borderRadius: 3,
+  color: '#e0e3e6', fontSize: 12, outline: 'none',
 }
 
 const confirmBtnStyle = {
-  padding: '4px 12px',
-  background: '#1a3328',
-  border: '1px solid #44cc66',
-  borderRadius: 4,
-  color: '#44cc66',
-  fontSize: 11,
-  fontWeight: 600,
-  cursor: 'pointer',
+  padding: '4px 14px',
+  background: '#1a3328', border: '1px solid #44cc66',
+  borderRadius: 4, color: '#44cc66',
+  fontSize: 11, fontWeight: 600, cursor: 'pointer',
 }
 
 const cancelBtnStyle = {
-  padding: '4px 12px',
-  background: '#2e1a1a',
-  border: '1px solid #ff4444',
-  borderRadius: 4,
-  color: '#ff4444',
-  fontSize: 11,
-  fontWeight: 600,
-  cursor: 'pointer',
-}
-
-const pointRowStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  padding: '5px 8px',
-  borderRadius: 4,
-  border: '1px solid #2a2d30',
-  marginBottom: 2,
-  cursor: 'pointer',
-  transition: 'all 0.1s',
-  gap: 4,
-}
-
-const expressionEditorStyle = {
-  padding: 10,
-  background: '#252830',
-  borderRadius: 6,
-  border: '1px solid #3a3d42',
+  padding: '4px 14px',
+  background: '#2e1a1a', border: '1px solid #ff4444',
+  borderRadius: 4, color: '#ff4444',
+  fontSize: 11, fontWeight: 600, cursor: 'pointer',
 }
 
 const edgeRowStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  padding: '5px 8px',
-  borderRadius: 4,
-  border: '1px solid #2a2d30',
-  marginBottom: 2,
-  gap: 6,
+  display: 'flex', alignItems: 'center',
+  padding: '5px 8px', borderRadius: 4,
+  border: '1px solid #2a2d30', marginBottom: 2, gap: 6,
 }
 
 const serviceSelectStyle = {
-  padding: '2px 4px',
-  background: '#252830',
-  border: '1px solid #3a3d42',
-  borderRadius: 3,
-  color: '#e0e3e6',
-  fontSize: 11,
-  outline: 'none',
+  padding: '2px 4px', background: '#252830',
+  border: '1px solid #3a3d42', borderRadius: 3,
+  color: '#e0e3e6', fontSize: 11, outline: 'none',
 }
 
 const labelStyle = {
-  fontSize: 11,
-  color: '#888',
-  fontWeight: 600,
-  display: 'block',
-  marginBottom: 2,
+  fontSize: 11, color: '#666', fontWeight: 600,
+  display: 'block', marginBottom: 2,
 }
 
 const metaInputStyle = {
-  width: '100%',
-  padding: '5px 8px',
-  background: '#252830',
-  border: '1px solid #3a3d42',
-  borderRadius: 4,
-  color: '#e0e3e6',
-  fontSize: 12,
-  fontFamily: 'monospace',
-  outline: 'none',
-  boxSizing: 'border-box',
+  width: '100%', padding: '5px 8px',
+  background: '#252830', border: '1px solid #3a3d42',
+  borderRadius: 4, color: '#e0e3e6', fontSize: 12,
+  fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box',
 }
 
 const bottomBarStyle = {
   borderTop: '1px solid #2a2d30',
-  padding: '8px 0 0 0',
-  flexShrink: 0,
+  padding: '8px 0 0 0', flexShrink: 0,
 }
 
 const validateBtnStyle = {
-  flex: 1,
-  padding: '7px 12px',
-  background: '#252830',
-  border: '1px solid #3a3d42',
-  borderRadius: 4,
-  color: '#aaa',
-  fontSize: 12,
-  fontWeight: 600,
-  cursor: 'pointer',
+  flex: 1, padding: '7px 12px',
+  background: '#1e2124', border: '1px solid #3a3d42',
+  borderRadius: 4, color: '#aaa', fontSize: 12,
+  fontWeight: 600, cursor: 'pointer',
 }
 
 const generateBtnStyle = {
-  flex: 1,
-  padding: '7px 12px',
-  background: '#1a3328',
-  border: '1px solid #7fffd4',
-  borderRadius: 4,
-  color: '#7fffd4',
-  fontSize: 12,
-  fontWeight: 700,
-  cursor: 'pointer',
-}
-
-const emptyStateStyle = {
-  padding: '16px 12px',
-  color: '#666',
-  fontSize: 12,
-  textAlign: 'center',
-  lineHeight: 1.6,
-  background: '#1a1c1e',
-  borderRadius: 6,
-  border: '1px dashed #2a2d30',
+  flex: 1, padding: '7px 12px',
+  background: '#1a3328', border: '1px solid #7fffd4',
+  borderRadius: 4, color: '#7fffd4', fontSize: 12,
+  fontWeight: 700, cursor: 'pointer',
 }

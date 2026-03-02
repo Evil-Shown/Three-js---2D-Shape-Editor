@@ -207,6 +207,40 @@ export class ParameterStore {
     }
   }
 
+  // --- Bulk add from analysis ---
+
+  /**
+   * Add multiple parameters from a GeometryAnalyzer result in a single operation.
+   * Skips any parameter whose name already exists. Returns count of added params.
+   *
+   * @param {Array<{name, type, defaultValue, description}>} suggestions
+   * @returns {number} count of newly added parameters
+   */
+  addParametersFromAnalysis(suggestions) {
+    let added = 0
+    for (const s of suggestions) {
+      // Skip if name already taken
+      if (this._parameters.some(p => p.name === s.name)) continue
+      // Skip invalid names
+      if (!isValidJavaIdentifier(s.name)) continue
+      if (!Object.values(ParameterType).includes(s.type)) continue
+
+      const id = `param_${++_paramIdCounter}`
+      this._parameters.push({
+        id,
+        name: s.name,
+        type: s.type,
+        defaultValue: typeof s.defaultValue === 'number' ? s.defaultValue : parseFloat(s.defaultValue) || 0,
+        description: s.description || '',
+        unit: s.type === ParameterType.ANGLE ? '°' : 'mm',
+        expression: s.type === ParameterType.DERIVED ? '' : null,
+      })
+      added++
+    }
+    if (added > 0) this._notify()
+    return added
+  }
+
   // --- Clear ---
 
   clear() {

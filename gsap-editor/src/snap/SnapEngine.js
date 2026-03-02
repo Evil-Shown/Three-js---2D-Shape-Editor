@@ -6,6 +6,7 @@ import { bus } from '../core/EventBus.js'
 
 /* ── Snap type constants (priority order high → low) ── */
 export const SNAP = {
+  CLOSE_PATH:    'ClosePath',
   ENDPOINT:      'Endpoint',
   MIDPOINT:      'Midpoint',
   CENTER:        'Center',
@@ -18,6 +19,7 @@ export const SNAP = {
 }
 
 const SNAP_PRIORITY = [
+  SNAP.CLOSE_PATH,   // highest priority — auto-close shape
   SNAP.ENDPOINT,
   SNAP.MIDPOINT,
   SNAP.CENTER,
@@ -29,6 +31,7 @@ const SNAP_PRIORITY = [
 ]
 
 const SNAP_COLORS = {
+  [SNAP.CLOSE_PATH]:    0x00ffaa,  // bright aqua — "close shape" indicator
   [SNAP.ENDPOINT]:      0xffff00,  // yellow
   [SNAP.MIDPOINT]:      0x00ffff,  // cyan
   [SNAP.CENTER]:        0x00ff00,  // green
@@ -66,10 +69,22 @@ export class SnapEngine {
 
     // Drawing context — set by active tool
     this._drawOrigin = null  // start point of line being drawn
+
+    // Path first-point — set by tools at path start for close-path snapping
+    this._pathFirstPoint = null
+
+    // External open-end provider (PathConnectivity)
+    this._pathConnectivity = null
   }
 
   /** Tools call this when a "from" point is established */
   setDrawOrigin(p) { this._drawOrigin = p ? { x: p.x, y: p.y } : null }
+
+  /** Tools call this at path start for close-path snap */
+  setPathFirstPoint(p) { this._pathFirstPoint = p ? { x: p.x, y: p.y } : null }
+
+  /** Inject PathConnectivity reference for open-end snapping */
+  setPathConnectivity(pc) { this._pathConnectivity = pc }
 
   /** Main snap — takes raw world point, returns snapped point + metadata.
    *  @param {{ x: number, y: number }} world
@@ -105,6 +120,7 @@ export class SnapEngine {
 
   _trySnap(type, world, threshold) {
     switch (type) {
+      case SNAP.CLOSE_PATH:    return this._closePathSnap(world, threshold)
       case SNAP.ENDPOINT:      return this._endpointSnap(world, threshold)
       case SNAP.MIDPOINT:      return this._midpointSnap(world, threshold)
       case SNAP.CENTER:        return this._centerSnap(world, threshold)
@@ -115,6 +131,34 @@ export class SnapEngine {
       case SNAP.GRID:          return this._gridResult(world, threshold)
       default: return null
     }
+  }
+
+  /* ── 0. Close Path — highest priority ── */
+  _closePathSnap(world, threshold) {
+    // Use extended threshold for close-path (50% larger) to make it easier
+    const closeThreshold = threshold * 1.5
+    const candidates = []
+
+    // 1. Path first-point set by the active tool
+    if (this._pathFirstPoint) {
+      candidates.push(this._pathFirstPoint)
+    }
+
+    // 2. Open endpoints from PathConnectivity (graph-based)
+    if (this._pathConnectivity) {
+      const openEnds = this._pathConnectivity.getOpenEndpointsForSnap()
+      for (const pt of openEnds) {
+        // Don't snap to ourselves — skip if same as drawOrigin
+        if (this._drawOrigin &&
+            Math.hypot(pt.x - this._drawOrigin.x, pt.y - this._drawOrigin.y) < 0.01) {
+          continue
+        }
+        candidates.push(pt)
+      }
+    }
+
+    if (candidates.length === 0) return null
+    return this._closestCandidate(world, closeThreshold, candidates)
   }
 
   /* ── 1. Endpoint ── */

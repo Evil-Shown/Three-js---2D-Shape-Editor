@@ -1,0 +1,13 @@
+{
+  "name": "gsap-shape-editor",
+  "private": true,
+  "description": "2D Shape Editor — React + Three.js frontend, Node + MySQL backend",
+  "scripts": {
+    "dev": "concurrently -n server,frontend -c cyan,magenta \"npm run dev:server\" \"npm run dev:frontend\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:frontend": "cd gsap-editor && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

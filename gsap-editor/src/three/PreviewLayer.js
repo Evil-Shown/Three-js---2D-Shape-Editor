@@ -62,6 +62,7 @@ export class PreviewLayer {
     const s = this._indicatorSize()
 
     switch (type) {
+      case SNAP.CLOSE_PATH:    this._drawClosePath(point, color, s); break
       case SNAP.ENDPOINT:      this._drawSquare(point, color, s); break
       case SNAP.MIDPOINT:      this._drawTriangle(point, color, s); break
       case SNAP.CENTER:        this._drawCross(point, color, s); break
@@ -97,6 +98,30 @@ export class PreviewLayer {
       new THREE.Vector3(p.x - h, p.y - h, 2)
     ]
     this._addShape(pts, color)
+  }
+
+  /** Close-path indicator: double circle + cross — very visible "click to close" */
+  _drawClosePath(p, color, s) {
+    const r1 = s * 0.7
+    const r2 = s * 0.4
+    // Outer ring
+    const outer = []
+    for (let i = 0; i <= 32; i++) {
+      const a = (i / 32) * Math.PI * 2
+      outer.push(new THREE.Vector3(p.x + r1 * Math.cos(a), p.y + r1 * Math.sin(a), 2))
+    }
+    this._addShape(outer, color)
+    // Inner ring
+    const inner = []
+    for (let i = 0; i <= 32; i++) {
+      const a = (i / 32) * Math.PI * 2
+      inner.push(new THREE.Vector3(p.x + r2 * Math.cos(a), p.y + r2 * Math.sin(a), 2))
+    }
+    this._addShape(inner, color)
+    // Cross
+    const h = s * 0.25
+    this._addLine2(p.x - h, p.y, p.x + h, p.y, color)
+    this._addLine2(p.x, p.y - h, p.x, p.y + h, color)
   }
 
   _drawTriangle(p, color, s) {

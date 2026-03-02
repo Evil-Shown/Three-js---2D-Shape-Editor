@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import ReactDOM from 'react-dom'
+import * as THREE from 'three'
 import { SceneManager } from '../three/SceneManager'
 import { GeometryStore } from '../store/GeometryStore'
 import { ParameterStore } from '../store/ParameterStore'
@@ -13,7 +14,10 @@ import { AnnotationLayer } from '../render/AnnotationLayer'
 import { GridRenderer } from '../render/GridRenderer'
 import { ExportService } from '../export/ExportService'
 import { bus } from '../core/EventBus.js'
+import { PathConnectivity } from '../core/PathConnectivity.js'
 import { ExpressionBuilder } from '../parameters/ExpressionBuilder'
+import { AutoAssignService } from '../parameters/AutoAssignService'
+import { GeometryAnalyzer } from '../parameters/GeometryAnalyzer'
 
 import { SelectTool } from '../tools/SelectTool'
 import { LineTool } from '../tools/LineTool'
@@ -27,22 +31,30 @@ import { MeasureTool } from '../tools/MeasureTool'
 import { DimensionTool } from '../tools/DimensionTool'
 import { EdgeTagger } from '../tools/EdgeTagger'
 import { PointTagger } from '../tools/PointTagger'
+import { RoundedRectTool } from '../tools/RoundedRectTool'
+import { SketchTool } from '../tools/SketchTool'
 
 import Toolbar from './Toolbar'
 import ParameterPanel from './ParameterPanel'
+import DetectedDimensionsPanel from './DetectedDimensionsPanel'
 import StatusBar from './StatusBar'
+import { Toaster, toast } from './Toast'
+import SaveConfirmModal from './SaveConfirmModal'
+import { saveShape, getNextShapeNumber } from '../api/shapesApi'
 
 const TOOL_DEFS = [
-  { key: 'select',    icon: '⇱', label: 'Select',    shortcut: 'S', group: 'edit' },
-  { key: 'line',      icon: '╱', label: 'Line',      shortcut: 'L', group: 'draw' },
-  { key: 'arc',       icon: '◠', label: 'Arc',       shortcut: 'A', group: 'draw' },
-  { key: 'rectangle', icon: '▭', label: 'Rectangle', shortcut: 'R', group: 'draw' },
-  { key: 'circle',    icon: '○', label: 'Circle',    shortcut: 'C', group: 'draw' },
-  { key: 'move',      icon: '✥', label: 'Move',      shortcut: 'M', group: 'edit' },
-  { key: 'trim',      icon: '✂', label: 'Trim',      shortcut: 'T', group: 'edit' },
-  { key: 'offset',    icon: '⟺', label: 'Offset',   shortcut: 'O', group: 'edit' },
-  { key: 'measure',   icon: '📏', label: 'Measure',  shortcut: 'Q', group: 'info' },
-  { key: 'dimension', icon: '↔', label: 'Dimension', shortcut: 'D', group: 'info' },
+  { key: 'select',      icon: '⇱', label: 'Select',      shortcut: 'S', group: 'edit' },
+  { key: 'sketch',      icon: '✎', label: 'Sketch',      shortcut: 'K', group: 'draw' },
+  { key: 'line',        icon: '╱', label: 'Line',        shortcut: 'L', group: 'draw' },
+  { key: 'arc',         icon: '◠', label: 'Arc',         shortcut: 'A', group: 'draw' },
+  { key: 'rectangle',   icon: '▭', label: 'Rect',        shortcut: 'R', group: 'draw' },
+  { key: 'roundedRect', icon: '▢', label: 'Round Rect',  shortcut: 'G', group: 'draw' },
+  { key: 'circle',      icon: '○', label: 'Circle',      shortcut: 'C', group: 'draw' },
+  { key: 'move',        icon: '✥', label: 'Move',        shortcut: 'M', group: 'edit' },
+  { key: 'trim',        icon: '✂', label: 'Trim',        shortcut: 'T', group: 'edit' },
+  { key: 'offset',      icon: '⟺', label: 'Offset',     shortcut: 'O', group: 'edit' },
+  { key: 'measure',     icon: '📏', label: 'Measure',    shortcut: 'Q', group: 'info' },
+  { key: 'dimension',   icon: '↔', label: 'Dimension',   shortcut: 'D', group: 'info' },
 ]
 
 const PARAM_TOOL_DEFS = [
@@ -77,14 +89,37 @@ export default function Editor() {
   const [totalPoints, setTotalPoints] = useState(0)
   const [, forceRerender] = useState(0)
 
+  // --- Save-to-DB modal state ---
+  const [saveModal, setSaveModal] = useState(null)
+
   // --- Edge tagger popup state ---
   const [edgePopup, setEdgePopup] = useState(null)
+
+  // --- Detected dimensions panel state ---
+  const [showDetectedDims, setShowDetectedDims] = useState(false)
+  const [detectedAnalysis, setDetectedAnalysis] = useState(null)
+  const autoAssignRef = useRef(new AutoAssignService())
 
   // --- Point expression popup (floats near clicked point on canvas) ---
   const [pointExpressionPopup, setPointExpressionPopup] = useState(null)
   const [pointExprInputX, setPointExprInputX] = useState('')
   const [pointExprInputY, setPointExprInputY] = useState('')
   const canvasAreaRef = useRef(null)
+
+  const syncNextShapeMetadata = useCallback(async () => {
+    const eng = enginesRef.current
+    if (!eng) return
+
+    try {
+      const { nextShapeNumber, suggestedClassName } = await getNextShapeNumber()
+      eng.paramStore.setShapeMetadata({
+        shapeNumber: nextShapeNumber,
+        className: suggestedClassName || `ShapeTransformer_${nextShapeNumber}`,
+      })
+    } catch (err) {
+      console.warn('Could not fetch next shape number from DB:', err?.message || err)
+    }
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -97,7 +132,11 @@ export default function Editor() {
     const history = new CommandHistory()
     const snap = new SnapEngine(coord, store)
     const constraint = new ConstraintEngine(coord)
+    const pathConnectivity = new PathConnectivity(store)
     const meshMap = new Map()
+
+    // Wire PathConnectivity into SnapEngine for close-path snapping
+    snap.setPathConnectivity(pathConnectivity)
 
     const previewLayer = new PreviewLayer(scene.scene, coord)
     const annotationLayer = new AnnotationLayer(scene.scene)
@@ -122,6 +161,8 @@ export default function Editor() {
     const offsetTool = new OffsetTool(deps)
     const measureTool = new MeasureTool(deps)
     const dimensionTool = new DimensionTool(deps)
+    const roundedRectTool = new RoundedRectTool(deps)
+    const sketchTool = new SketchTool(deps)
     const edgeTagger = new EdgeTagger(deps)
     const pointTagger = new PointTagger(deps)
 
@@ -135,6 +176,8 @@ export default function Editor() {
     tm.register('offset', offsetTool)
     tm.register('measure', measureTool)
     tm.register('dimension', dimensionTool)
+    tm.register('roundedRect', roundedRectTool)
+    tm.register('sketch', sketchTool)
     tm.register('edgeTagger', edgeTagger)
     tm.register('pointTagger', pointTagger)
 
@@ -156,9 +199,11 @@ export default function Editor() {
       store, paramStore, coord, history, snap, constraint,
       meshMap, previewLayer, annotationLayer, gridRenderer,
       tm, selectTool, offsetTool, arcTool,
-      edgeTagger, pointTagger,
+      edgeTagger, pointTagger, pathConnectivity,
       exportService: new ExportService(store, paramStore),
     }
+
+    syncNextShapeMetadata()
 
     // --- Event subscriptions ---
     const unsubs = []
@@ -185,7 +230,17 @@ export default function Editor() {
     unsubs.push(bus.on('geometryChanged', () => {
       setEdgeCount(store.getEdgeCount())
       gridRenderer.render()
-      checkShapeClosed(store)
+
+      console.log(`[geometryChanged] ${store.getEdgeCount()} edges in store`)
+
+      // ── Progressive auto-heal: fix tiny gaps between edges ──
+      const healResult = pathConnectivity.autoHealGaps()
+      if (healResult.totalWelds > 0) {
+        console.log(`[geometryChanged] Auto-healed ${healResult.totalWelds} gap(s) in ${healResult.passesUsed} pass(es)`)
+        refreshMeshes(store, meshMap)
+      }
+
+      checkShapeClosed(store, pathConnectivity)
     }))
 
     unsubs.push(bus.on('selectionChanged', ({ edges }) => {
@@ -248,16 +303,71 @@ export default function Editor() {
     })
     resizeObs.observe(canvas.parentElement)
 
-    function checkShapeClosed(geoStore) {
+    /**
+     * Rebuild meshes for all edges after auto-healing mutated their geometry.
+     */
+    function refreshMeshes(geoStore, mMap) {
+      for (const [id, mesh] of mMap) {
+        const edge = geoStore.getEdgeById(id)
+        if (!edge) continue
+        if (edge.type === 'line') {
+          const pts = [
+            new THREE.Vector3(edge.start.x, edge.start.y, 0),
+            new THREE.Vector3(edge.end.x, edge.end.y, 0)
+          ]
+          mesh.geometry.dispose()
+          mesh.geometry = new THREE.BufferGeometry().setFromPoints(pts)
+        } else if (edge.type === 'arc') {
+          const curve = new THREE.EllipseCurve(
+            edge.center.x, edge.center.y,
+            edge.radius, edge.radius,
+            edge.startAngle, edge.endAngle,
+            edge.clockwise, 0
+          )
+          const arcPts = curve.getPoints(64)
+          mesh.geometry.dispose()
+          mesh.geometry = new THREE.BufferGeometry().setFromPoints(arcPts)
+        }
+      }
+    }
+
+    function checkShapeClosed(geoStore, pc) {
       const edges = geoStore.getEdges()
+      console.log(`[checkShapeClosed] ${edges.length} edges`)
       if (edges.length < 2) {
         setCanSwitchToParam(false)
-        setSwitchError('Shape must be closed (need at least 2 edges)')
+        setSwitchError('Draw a closed shape first (rectangle, circle, or connected lines)')
         return
       }
-      const closed = isShapeClosed(edges)
-      setCanSwitchToParam(closed)
-      setSwitchError(closed ? '' : 'Shape must be closed before defining parameters')
+
+      let result = pc.validate(edges)
+      console.log(`[checkShapeClosed] closed=${result.closed}, almostClosed=${result.almostClosed}, diagnostics: ${result.diagnostics}`)
+
+      // ── Auto-fix "almost closed" shapes (small gap between 2 open ends) ──
+      if (!result.closed && result.almostClosed && result.gap < 10) {
+        console.log(`[checkShapeClosed] Attempting to auto-close gap of ${result.gap.toFixed(4)} mm…`)
+        const healed = pc.healAlmostClosed(10.0)
+        if (healed) {
+          refreshMeshes(geoStore, meshMap)
+          // Re-validate after healing
+          result = pc.validate(geoStore.getEdges())
+          console.log(`[checkShapeClosed] After heal: closed=${result.closed}`)
+        }
+      }
+
+      if (!result.closed && result.openVertices) {
+        result.openVertices.forEach(v => {
+          console.log(`  open vertex: (${v.x.toFixed(4)}, ${v.y.toFixed(4)}) degree=${v.degree}`)
+        })
+      }
+      setCanSwitchToParam(result.closed)
+      if (result.closed) {
+        setSwitchError('')
+      } else if (result.almostClosed) {
+        setSwitchError(`Almost closed! Gap of ${result.gap.toFixed(2)} — close the last edge to the starting point.`)
+      } else {
+        setSwitchError(result.diagnostics)
+      }
 
       const builder = new ExpressionBuilder()
       const pts = builder.extractShapePoints(geoStore)
@@ -272,37 +382,7 @@ export default function Editor() {
       coord.dispose()
       scene.dispose()
     }
-  }, [])
-
-  // --- Shape closure check ---
-  function isShapeClosed(edges) {
-    if (edges.length < 2) return false
-    const EPSILON = 0.5
-
-    const getStart = (e) => {
-      if (e.type === 'line') return e.start
-      if (e.type === 'arc') return {
-        x: e.center.x + e.radius * Math.cos(e.startAngle),
-        y: e.center.y + e.radius * Math.sin(e.startAngle),
-      }
-      return null
-    }
-
-    const getEnd = (e) => {
-      if (e.type === 'line') return e.end
-      if (e.type === 'arc') return {
-        x: e.center.x + e.radius * Math.cos(e.endAngle),
-        y: e.center.y + e.radius * Math.sin(e.endAngle),
-      }
-      return null
-    }
-
-    const firstStart = getStart(edges[0])
-    const lastEnd = getEnd(edges[edges.length - 1])
-    if (!firstStart || !lastEnd) return false
-
-    return Math.hypot(firstStart.x - lastEnd.x, firstStart.y - lastEnd.y) < EPSILON
-  }
+  }, [syncNextShapeMetadata])
 
   // --- Mode switching ---
   const handleModeSwitch = useCallback((mode) => {
@@ -315,10 +395,20 @@ export default function Editor() {
       eng.tm.cancel()
       eng.tm.setActive('pointTagger')
 
-      // Auto-assign p0 expressions if not set
-      const p0Expr = eng.paramStore.getPointExpression('p0')
-      if (!p0Expr) {
-        eng.paramStore.setPointExpression('p0', 'trimLeft', 'trimBottom')
+      // Run geometry analysis to detect dimensions automatically
+      const analyzer = new GeometryAnalyzer()
+      const analysis = analyzer.analyze(eng.store)
+
+      // Show detected dimensions panel if no parameters exist yet
+      const existingParams = eng.paramStore.getParameters()
+      if (existingParams.length === 0 && analysis.suggestedParams.length > 0) {
+        setDetectedAnalysis(analysis)
+        setShowDetectedDims(true)
+      } else {
+        // Auto-fill any missing points with existing parameters
+        const autoSvc = new AutoAssignService()
+        autoSvc.autoAssignMissing(eng.paramStore, eng.store)
+        if (eng.pointTagger) eng.pointTagger.refreshIndicators()
       }
 
       setEditorMode('parameter')
@@ -415,6 +505,7 @@ export default function Editor() {
       case 'new':
         eng.store.clear()
         eng.paramStore.clear()
+        syncNextShapeMetadata()
         eng.history.clear()
         eng.meshMap.forEach((m) => { eng.threeScene.remove(m); m.geometry?.dispose(); m.material?.dispose() })
         eng.meshMap.clear()
@@ -425,7 +516,7 @@ export default function Editor() {
         bus.emit('geometryChanged')
         break
       case 'export':
-        eng.exportService.exportJSON()
+        handleExportFlowRef.current?.()
         break
       case 'undo':
         eng.history.undo()
@@ -452,7 +543,7 @@ export default function Editor() {
         eng.arcTool.toggleMode()
         break
     }
-  }, [])
+  }, [syncNextShapeMetadata])
 
   // --- Handle edge service popup ---
   const handleEdgeServiceSelect = useCallback((edgeId, service) => {
@@ -473,14 +564,53 @@ export default function Editor() {
     forceRerender(n => n + 1)
   }, [pointExpressionPopup, pointExprInputX, pointExprInputY])
 
-  // --- Handle Generate ---
-  const handleGenerate = useCallback(() => {
+  // --- Unified Export Flow: save to DB → toast → ask download ---
+  const handleExportFlow = useCallback(async () => {
     const eng = enginesRef.current
     if (!eng) return
-    eng.exportService.exportJSON({
-      name: eng.paramStore.getShapeMetadata().className || 'shape',
+
+    const meta = {
+      name     : eng.paramStore.getShapeMetadata().className || 'shape',
       thickness: 5,
-    })
+    }
+
+    let payload
+    try {
+      payload = eng.exportService.getExportPayload(meta)
+    } catch (err) {
+      toast.error('Export failed: ' + err.message)
+      return
+    }
+
+    if (!payload || !payload.edges || payload.edges.length === 0) {
+      toast.error('Nothing to export — draw some edges first.')
+      return
+    }
+
+    toast.loading('Saving to database…')
+
+    try {
+      await saveShape(payload.name, payload)
+      toast.success(`"${payload.name}" saved to database!`)
+      setSaveModal({ payload, fileName: payload.name })
+    } catch (err) {
+      if ((err.message || '').toLowerCase().includes('shape number')) {
+        toast.error(err.message)
+      } else {
+        toast.error(`Could not reach database: ${err.message}`)
+      }
+      // Still let user download even when DB is unavailable
+      setSaveModal({ payload, fileName: payload.name, dbError: true })
+    }
+  }, []) // eslint-disable-line
+
+  // Use a ref so menuAction (empty-dep useCallback) can always call the latest version
+  const handleExportFlowRef = useRef(null)
+  handleExportFlowRef.current = handleExportFlow
+
+  // --- Handle Generate (Parameter Mode button) ---
+  const handleGenerate = useCallback(() => {
+    handleExportFlowRef.current?.()
   }, [])
 
   // --- Property panel content ---
@@ -674,43 +804,73 @@ export default function Editor() {
                   if (e.key === 'Enter' && pointExpressionPopup.pointId !== 'p0') { e.preventDefault(); handlePointExpressionSave() }
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#7fffd4', marginBottom: 6 }}>
-                  {pointExpressionPopup.pointId}
-                  <span style={{ color: '#666', fontSize: 11, fontWeight: 400, marginLeft: 6 }}>
-                    ({pointExpressionPopup.x.toFixed(1)}, {pointExpressionPopup.y.toFixed(1)})
-                  </span>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#7fffd4' }}>
+                      {pointExpressionPopup.pointId}
+                    </span>
+                    <span style={{ color: '#555', fontSize: 11, fontWeight: 400, marginLeft: 6 }}>
+                      drawn at ({pointExpressionPopup.x.toFixed(2)}, {pointExpressionPopup.y.toFixed(2)})
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setPointExpressionPopup(null)}
+                    style={{ background: 'none', border: 'none', color: '#555', fontSize: 16, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}
+                  >✕</button>
                 </div>
+
                 {pointExpressionPopup.pointId === 'p0' ? (
-                  <div style={{ color: '#ff8844', fontSize: 12 }}>
-                    p0 is trim origin — x=trimLeft, y=trimBottom (auto-assigned)
+                  <div>
+                    <div style={{ color: '#7fffd4', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>⚓ Shape Origin (auto-assigned)</div>
+                    <div style={{ color: '#999', fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
+                      This is the bottom-left corner of your shape.<br />
+                      X = <code style={{ color: '#ccc' }}>trimLeft</code>, Y = <code style={{ color: '#ccc' }}>trimBottom</code>
+                    </div>
+                    <button style={pointPopupCancelBtnStyle} onClick={() => setPointExpressionPopup(null)}>Close</button>
                   </div>
                 ) : (
                   <>
-                    <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 2 }}>X expression</label>
-                    <input
-                      type="text"
-                      value={pointExprInputX}
-                      onChange={e => setPointExprInputX(e.target.value)}
-                      placeholder="e.g. p0.x + L"
-                      style={pointExprInputStyle}
-                      autoFocus
-                    />
-                    <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 2, marginTop: 6 }}>Y expression</label>
-                    <input
-                      type="text"
-                      value={pointExprInputY}
-                      onChange={e => setPointExprInputY(e.target.value)}
-                      placeholder="e.g. p0.y + R1"
-                      style={pointExprInputStyle}
-                    />
-                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <button style={pointPopupSaveBtnStyle} onClick={handlePointExpressionSave}>Save</button>
+                    {/* When auto-assigned, show a friendly "already set" message */}
+                    {(pointExprInputX.trim() || pointExprInputY.trim()) && (
+                      <div style={{ padding: '5px 8px', background: '#0e1a12', borderRadius: 4, border: '1px solid #1e4028', marginBottom: 8, fontSize: 11, color: '#88cc99' }}>
+                        ✓ Auto-assigned — edit below or close to keep
+                      </div>
+                    )}
+
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 2 }}>
+                        X (horizontal) — drawn at <b style={{ color: '#aaa' }}>{pointExpressionPopup.x.toFixed(2)}</b>
+                      </label>
+                      <input
+                        type="text"
+                        value={pointExprInputX}
+                        onChange={e => setPointExprInputX(e.target.value)}
+                        placeholder={`${pointExpressionPopup.x.toFixed(2)}  (or: p0.x + 150)`}
+                        style={pointExprInputStyle}
+                        autoFocus
+                      />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 2 }}>
+                        Y (vertical) — drawn at <b style={{ color: '#aaa' }}>{pointExpressionPopup.y.toFixed(2)}</b>
+                      </label>
+                      <input
+                        type="text"
+                        value={pointExprInputY}
+                        onChange={e => setPointExprInputY(e.target.value)}
+                        placeholder={`${pointExpressionPopup.y.toFixed(2)}  (or: p0.y + 80)`}
+                        style={pointExprInputStyle}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button style={pointPopupSaveBtnStyle} onClick={handlePointExpressionSave}>✓ Save</button>
                       <button style={pointPopupCancelBtnStyle} onClick={() => setPointExpressionPopup(null)}>Cancel</button>
                     </div>
+                    <div style={{ marginTop: 6, color: '#444', fontSize: 10 }}>
+                      Tip: use the parameter panel on the right for smart suggestions
+                    </div>
                   </>
-                )}
-                {pointExpressionPopup.pointId === 'p0' && (
-                  <button style={{ ...pointPopupCancelBtnStyle, marginTop: 8, width: '100%' }} onClick={() => setPointExpressionPopup(null)}>Close</button>
                 )}
               </div>
             </div>
@@ -758,20 +918,39 @@ export default function Editor() {
         {/* Right Panel */}
         <aside style={propertyPanelStyle}>
           {isParamMode ? (
-            <>
+            <div style={paramSideLayoutStyle}>
               <div style={{ color: '#ff8844', fontWeight: 700, fontSize: 16, marginBottom: 12, letterSpacing: 0.5 }}>
                 PARAMETERS
               </div>
-              {enginesRef.current && (
-                <ParameterPanel
+
+              {/* Detected dimensions panel — shows on first switch to param mode */}
+              {showDetectedDims && detectedAnalysis && enginesRef.current && (
+                <DetectedDimensionsPanel
+                  analysis={detectedAnalysis}
                   paramStore={enginesRef.current.paramStore}
                   geometryStore={enginesRef.current.store}
+                  autoAssignService={autoAssignRef.current}
                   pointTagger={enginesRef.current.pointTagger}
-                  edgeTagger={enginesRef.current.edgeTagger}
-                  onGenerate={handleGenerate}
+                  onCreated={() => {
+                    setShowDetectedDims(false)
+                    forceRerender(n => n + 1)
+                  }}
+                  onDismiss={() => setShowDetectedDims(false)}
                 />
               )}
-            </>
+
+              {enginesRef.current && (
+                <div style={paramPanelWrapStyle}>
+                  <ParameterPanel
+                    paramStore={enginesRef.current.paramStore}
+                    geometryStore={enginesRef.current.store}
+                    pointTagger={enginesRef.current.pointTagger}
+                    edgeTagger={enginesRef.current.edgeTagger}
+                    onGenerate={handleGenerate}
+                  />
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <div style={{ color: '#7fffd4', fontWeight: 700, fontSize: 16, marginBottom: 12, letterSpacing: 0.5 }}>PROPERTIES</div>
@@ -815,6 +994,25 @@ export default function Editor() {
 
       {/* Click-away for menus */}
       {menuOpen && <div style={menuBackdropStyle} onClick={() => setMenuOpen(null)} />}
+
+      {/* ── Toast notification stack (bottom-right) ── */}
+      <Toaster />
+
+      {/* ── Save → Download confirm modal ── */}
+      {saveModal && (
+        <SaveConfirmModal
+          shapeName={
+            saveModal.dbError
+              ? `${saveModal.fileName} (saved locally — DB unavailable)`
+              : saveModal.fileName
+          }
+          onDownload={() => {
+            enginesRef.current?.exportService.downloadPayload(saveModal.payload)
+            setSaveModal(null)
+          }}
+          onClose={() => setSaveModal(null)}
+        />
+      )}
     </div>
   )
 }
@@ -963,10 +1161,24 @@ const toolGroupLabel = {
 }
 
 const propertyPanelStyle = {
-  width: 280, background: '#1e2124',
+  width: 420, background: '#1e2124',
   borderLeft: '1px solid #2a2d30',
   display: 'flex', flexDirection: 'column',
-  padding: '12px 14px', zIndex: 10, overflowY: 'auto', flexShrink: 0,
+  padding: '12px 14px', zIndex: 10, overflow: 'hidden', flexShrink: 0,
+}
+
+const paramSideLayoutStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  minHeight: 0,
+  height: '100%',
+  overflow: 'hidden',
+}
+
+const paramPanelWrapStyle = {
+  flex: 1,
+  minHeight: 0,
+  overflow: 'hidden',
 }
 
 const propHeaderStyle = {

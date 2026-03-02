@@ -5,9 +5,11 @@
 import { bus } from '../core/EventBus.js'
 
 const TOOL_SHORTCUTS = {
+  'k': 'sketch',
   'l': 'line',
   'a': 'arc',
   'r': 'rectangle',
+  'g': 'roundedRect',
   'c': 'circle',
   's': 'select',
   'm': 'move',
@@ -147,6 +149,11 @@ export class ToolManager {
       e.preventDefault()
       this._toggleAllSnaps()
       return
+    }
+
+    // When sketch tool is mid-draw, let it handle 'a' and 'l' internally
+    if (this._activeName === 'sketch' && this._active && this._active._points && this._active._points.length > 0) {
+      if (key === 'a' || key === 'l') return  // SketchTool's _handleKey already handled it
     }
 
     // Tool shortcuts (only single lowercase letters not handled above)

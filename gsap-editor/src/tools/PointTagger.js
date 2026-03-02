@@ -1,4 +1,8 @@
 // src/tools/PointTagger.js
+//
+// FIX: Removed duplicated (and broken) evaluation logic that hardcoded
+// trimLeft = 0 / trimBottom = 0. All status checking now delegates to
+// ExpressionBuilder.evaluateAll() which correctly seeds these from p0.
 
 import * as THREE from 'three'
 import { bus } from '../core/EventBus.js'
@@ -7,20 +11,23 @@ import { ExpressionBuilder } from '../parameters/ExpressionBuilder.js'
 
 export class PointTagger {
   constructor(deps) {
-    this.scene = deps.scene
-    this.store = deps.store
-    this.coord = deps.coord
-    this.canvas = deps.canvas
-    this.paramStore = deps.paramStore
-    this.preview = deps.previewLayer
+    this.scene       = deps.scene
+    this.store       = deps.store         // GeometryStore
+    this.coord       = deps.coord
+    this.canvas      = deps.canvas
+    this.paramStore  = deps.paramStore
+    this.preview     = deps.previewLayer
 
-    this._active = false
-    this._hoveredPointId = null
-    this._pointOverlays = []
-    this._labelOverlays = []
-    this._builder = new ExpressionBuilder()
+    this._active          = false
+    this._hoveredPointId  = null
+    this._pointOverlays   = []
+    this._builder         = new ExpressionBuilder()
 
-    this._handleMove = this._handleMove.bind(this)
+    // Cache the last evaluateAll result so we don't recompute per-point
+    this._evalCache       = null
+    this._evalCacheVersion = -1
+
+    this._handleMove  = this._handleMove.bind(this)
     this._handleClick = this._handleClick.bind(this)
   }
 
@@ -32,7 +39,7 @@ export class PointTagger {
     this.canvas.addEventListener('mousemove', this._handleMove)
     this.canvas.addEventListener('click', this._handleClick)
     this._renderPointIndicators()
-    bus.emit('toolStatus', 'POINT TAGGER: Click a point to assign parameter expressions')
+    bus.emit('toolStatus', 'POINT TAGGER — click a point to assign expressions, or use Auto-Assign in the panel')
   }
 
   deactivate() {
@@ -45,68 +52,68 @@ export class PointTagger {
 
   cancel() {
     this._hoveredPointId = null
-    bus.emit('toolStatus', 'POINT TAGGER: Click a point to assign parameter expressions')
+    bus.emit('toolStatus', 'POINT TAGGER — click a point to assign expressions')
   }
 
   getShapePoints() {
     return this._builder.extractShapePoints(this.store)
   }
 
+  /**
+   * Returns the verification status for a single point.
+   * Delegates entirely to evaluateAll() so trimLeft/trimBottom are correct.
+   */
   getPointStatus(pointId) {
     const expr = this.paramStore.getPointExpression(pointId)
     if (!expr || (!expr.x.trim() && !expr.y.trim())) {
       return POINT_STATUS.UNSET
     }
 
+    // Quick syntax check before expensive evaluation
     const vx = this._builder.validate(expr.x, this.paramStore)
     const vy = this._builder.validate(expr.y, this.paramStore)
     if (!vx.isValid || !vy.isValid) {
       return POINT_STATUS.ERROR
     }
 
-    const params = this.paramStore.getParameters()
-    const paramValues = {}
-    for (const p of params) paramValues[p.name] = p.defaultValue
-    paramValues.trimLeft = 0
-    paramValues.trimBottom = 0
+    const evalResult = this._getCachedEval()
+    const hasError = evalResult.summary.errors.some(e => e.pointId === pointId)
 
-    const allExprs = this.paramStore.getAllPointExpressions()
-    const computed = {}
-    const points = this.getShapePoints()
-
-    for (const pt of points) {
-      const pe = allExprs[pt.id]
-      if (!pe) continue
-      try {
-        const xv = this._builder.evaluate(pe.x, paramValues, computed)
-        const yv = this._builder.evaluate(pe.y, paramValues, computed)
-        computed[pt.id] = { x: xv, y: yv }
-      } catch {
-        if (pt.id === pointId) return POINT_STATUS.ERROR
-      }
-    }
-
-    const shapePoint = points.find(p => p.id === pointId)
-    const computedPt = computed[pointId]
-    if (!shapePoint || !computedPt) return POINT_STATUS.ASSIGNED
-
-    const dx = Math.abs(computedPt.x - shapePoint.x)
-    const dy = Math.abs(computedPt.y - shapePoint.y)
-    if (dx < 0.1 && dy < 0.1) return POINT_STATUS.VERIFIED
-
-    return POINT_STATUS.ERROR
+    if (hasError) return POINT_STATUS.ERROR
+    if (evalResult.computedPoints[pointId] !== undefined) return POINT_STATUS.VERIFIED
+    return POINT_STATUS.ASSIGNED
   }
 
   refreshIndicators() {
     if (this._active) {
+      this._evalCacheVersion = -1 // Invalidate cache
       this._renderPointIndicators()
     }
+  }
+
+  // ── Private ────────────────────────────────────────────────────────────────
+
+  /**
+   * Cache evaluateAll() results keyed by store version.
+   * Avoids re-evaluating every point on every mouse pixel.
+   */
+  _getCachedEval() {
+    const storeVersion = this.store.version + this.paramStore.version
+    if (storeVersion !== this._evalCacheVersion) {
+      try {
+        this._evalCache = this._builder.evaluateAll(this.paramStore, this.store)
+      } catch {
+        this._evalCache = { computedPoints: {}, summary: { errors: [], total: 0, assigned: 0, verified: 0 } }
+      }
+      this._evalCacheVersion = storeVersion
+    }
+    return this._evalCache
   }
 
   _handleMove(e) {
     if (!this._active) return
     const world = this.coord.screenToWorld(e.clientX, e.clientY)
-    const threshold = this.coord.pixelSize() * 12
+    const threshold = this.coord.pixelSize() * 14
     const points = this.getShapePoints()
 
     let closest = null
@@ -114,10 +121,7 @@ export class PointTagger {
 
     for (const pt of points) {
       const d = Math.hypot(world.x - pt.x, world.y - pt.y)
-      if (d < minDist) {
-        minDist = d
-        closest = pt
-      }
+      if (d < minDist) { minDist = d; closest = pt }
     }
 
     if (closest && closest.id !== this._hoveredPointId) {
@@ -126,19 +130,19 @@ export class PointTagger {
       const expr = this.paramStore.getPointExpression(closest.id)
       const status = this.getPointStatus(closest.id)
       bus.emit('toolStatus', expr
-        ? `${closest.id} (${status}): x=${expr.x}, y=${expr.y}`
-        : `${closest.id}: no expression — click to assign`)
+        ? `${closest.id} [${status}] x=${expr.x}  y=${expr.y}`
+        : `${closest.id} at (${closest.x.toFixed(1)}, ${closest.y.toFixed(1)}) — no expression yet`)
     } else if (!closest && this._hoveredPointId) {
       this._hoveredPointId = null
       this._renderPointIndicators()
-      bus.emit('toolStatus', 'POINT TAGGER: Click a point to assign parameter expressions')
+      bus.emit('toolStatus', 'POINT TAGGER — hover a point to inspect, click to edit')
     }
   }
 
   _handleClick(e) {
     if (!this._active) return
     const world = this.coord.screenToWorld(e.clientX, e.clientY)
-    const threshold = this.coord.pixelSize() * 12
+    const threshold = this.coord.pixelSize() * 14
     const points = this.getShapePoints()
 
     let closest = null
@@ -146,10 +150,7 @@ export class PointTagger {
 
     for (const pt of points) {
       const d = Math.hypot(world.x - pt.x, world.y - pt.y)
-      if (d < minDist) {
-        minDist = d
-        closest = pt
-      }
+      if (d < minDist) { minDist = d; closest = pt }
     }
 
     if (closest) {
@@ -166,21 +167,25 @@ export class PointTagger {
   _renderPointIndicators() {
     this._clearOverlays()
     const points = this.getShapePoints()
+    if (points.length === 0) return
+
     const pixSize = this.coord.pixelSize()
+    // Compute all statuses in one batch to use the cache
+    this._getCachedEval()
 
     for (const pt of points) {
-      const status = this.getPointStatus(pt.id)
-      const color = POINT_STATUS_COLORS[status]
+      const status   = this.getPointStatus(pt.id)
+      const color    = POINT_STATUS_COLORS[status]
       const isHovered = pt.id === this._hoveredPointId
-      const r = pixSize * (isHovered ? 10 : 7)
+      const r        = pixSize * (isHovered ? 10 : 7)
       const isFilled = status === POINT_STATUS.VERIFIED || status === POINT_STATUS.ERROR
 
-      this._drawPointCircle(pt.x, pt.y, r, color, isFilled)
+      this._drawPointCircle(pt.x, pt.y, r, color, isFilled, isHovered)
       this._drawPointLabel(pt.x, pt.y, pt.id, r, color)
     }
   }
 
-  _drawPointCircle(x, y, radius, color, filled) {
+  _drawPointCircle(x, y, radius, color, filled, hovered) {
     const segments = 32
     const pts = []
     for (let i = 0; i <= segments; i++) {
@@ -191,7 +196,7 @@ export class PointTagger {
     const geo = new THREE.BufferGeometry().setFromPoints(pts)
     const mat = new THREE.LineBasicMaterial({
       color: new THREE.Color(color),
-      linewidth: 2,
+      linewidth: hovered ? 3 : 2,
     })
     const line = new THREE.Line(geo, mat)
     this.scene.add(line)
@@ -206,8 +211,8 @@ export class PointTagger {
         if (i === 0) shape.moveTo(px, py)
         else shape.lineTo(px, py)
       }
-      const fillGeo = new THREE.ShapeGeometry(shape)
-      const fillMat = new THREE.MeshBasicMaterial({
+      const fillGeo  = new THREE.ShapeGeometry(shape)
+      const fillMat  = new THREE.MeshBasicMaterial({
         color: new THREE.Color(color),
         transparent: true,
         opacity: 0.3,
@@ -220,24 +225,30 @@ export class PointTagger {
   }
 
   _drawPointLabel(x, y, label, offset, color) {
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    canvas.width = 64
+    const canvas  = document.createElement('canvas')
+    const ctx     = canvas.getContext('2d')
+    canvas.width  = 72
     canvas.height = 32
+
+    // Background pill for readability
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    ctx.beginPath()
+    ctx.roundRect(2, 2, 68, 28, 6)
+    ctx.fill()
+
     ctx.fillStyle = color
     ctx.font = 'bold 20px monospace'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(label, 32, 16)
+    ctx.fillText(label, 36, 16)
 
-    const texture = new THREE.CanvasTexture(canvas)
+    const texture   = new THREE.CanvasTexture(canvas)
     const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true })
-    const sprite = new THREE.Sprite(spriteMat)
-    const scale = this.coord.pixelSize() * 30
-    sprite.scale.set(scale, scale * 0.5, 1)
-    sprite.position.set(x, y + offset * 1.8, 4)
+    const sprite    = new THREE.Sprite(spriteMat)
+    const scale     = this.coord.pixelSize() * 32
+    sprite.scale.set(scale, scale * 0.45, 1)
+    sprite.position.set(x, y + offset * 2.0, 4)
     this.scene.add(sprite)
-    this._labelOverlays.push(sprite)
     this._pointOverlays.push(sprite)
   }
 
@@ -251,6 +262,5 @@ export class PointTagger {
       }
     }
     this._pointOverlays = []
-    this._labelOverlays = []
   }
 }

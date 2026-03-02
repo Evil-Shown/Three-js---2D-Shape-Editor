@@ -42,6 +42,7 @@ export class LineTool {
     this._active = false
     this._points = []
     this.snap.setDrawOrigin(null)
+    this.snap.setPathFirstPoint(null)
     this.canvas.style.cursor = 'default'
     this.canvas.removeEventListener('click', this._handleClick)
     this.canvas.removeEventListener('mousemove', this._handleMove)
@@ -52,6 +53,7 @@ export class LineTool {
   cancel() {
     this._points = []
     this.snap.setDrawOrigin(null)
+    this.snap.setPathFirstPoint(null)
     this.constraint.clearAll()
     if (this.preview) this.preview.clear()
     bus.emit('toolStatus', 'LINE: Click start point')
@@ -85,6 +87,7 @@ export class LineTool {
     if (this._points.length === 0) {
       this._points.push(p)
       this.snap.setDrawOrigin(p)
+      this.snap.setPathFirstPoint(p)  // for close-path snapping
       this.coord.setRelativeOrigin(p)
       bus.emit('toolStatus', 'LINE: Click next point (Dbl-click or Esc to finish)')
       return
@@ -94,15 +97,22 @@ export class LineTool {
     const len = Math.hypot(p.x - prev.x, p.y - prev.y)
     if (len < 0.01) return
 
+    // Check if this closes the path (snapped to first point)
+    const first = this._points[0]
+    const distToFirst = Math.hypot(p.x - first.x, p.y - first.y)
+    const isClosing = this._points.length >= 2 && distToFirst < (this.coord.snapWorldThreshold() * 1.5)
+
+    // Force exact first-point coords when closing
+    const end = isClosing ? { x: first.x, y: first.y } : { x: p.x, y: p.y }
+
     // Create edge via undo-able command
     const store = this.store
     const scene = this.scene
     const meshMap = this._meshMap
     const start = { x: prev.x, y: prev.y }
-    const end   = { x: p.x, y: p.y }
 
     this.history.execute({
-      label: 'Draw Line',
+      label: isClosing ? 'Close Path' : 'Draw Line',
       _id: null,
       execute() {
         this._id = store.addEdge({ type: 'line', start, end })
@@ -131,13 +141,24 @@ export class LineTool {
       }
     })
 
-    // Continue multi-segment
-    this._points.push(p)
-    this.snap.setDrawOrigin(p)
-    this.coord.setRelativeOrigin(p)
-    this.constraint.clearAll()
-    bus.emit('geometryChanged')
-    bus.emit('toolStatus', 'LINE: Click next point (Dbl-click or Esc to finish)')
+    // Continue or finish multi-segment
+    if (isClosing) {
+      // Path closed — finish drawing
+      this._points = []
+      this.snap.setDrawOrigin(null)
+      this.snap.setPathFirstPoint(null)
+      this.constraint.clearAll()
+      if (this.preview) this.preview.clear()
+      bus.emit('geometryChanged')
+      bus.emit('toolStatus', 'LINE: Shape closed! Click start point for new path')
+    } else {
+      this._points.push(p)
+      this.snap.setDrawOrigin(p)
+      this.coord.setRelativeOrigin(p)
+      this.constraint.clearAll()
+      bus.emit('geometryChanged')
+      bus.emit('toolStatus', 'LINE: Click next point (Dbl-click or Esc to finish)')
+    }
   }
 
   _handleMove(e) {
@@ -162,7 +183,14 @@ export class LineTool {
       // Show length & angle tooltip
       const len = Math.hypot(snapped.x - origin.x, snapped.y - origin.y)
       const ang = Math.atan2(snapped.y - origin.y, snapped.x - origin.x) * 180 / Math.PI
-      bus.emit('toolInfo', { length: len.toFixed(2), angle: ang.toFixed(1) })
+
+      // Close-path indicator
+      if (this._points.length >= 2 && this.snap.activeSnap && this.snap.activeSnap.type === 'ClosePath') {
+        bus.emit('toolInfo', { length: len.toFixed(2), angle: ang.toFixed(1), close: true })
+        bus.emit('toolStatus', 'LINE: Click to CLOSE SHAPE')
+      } else {
+        bus.emit('toolInfo', { length: len.toFixed(2), angle: ang.toFixed(1) })
+      }
     }
   }
 
@@ -170,6 +198,7 @@ export class LineTool {
     // Finish multi-segment
     this._points = []
     this.snap.setDrawOrigin(null)
+    this.snap.setPathFirstPoint(null)
     this.constraint.clearAll()
     if (this.preview) this.preview.clear()
     bus.emit('toolStatus', 'LINE: Click start point')
