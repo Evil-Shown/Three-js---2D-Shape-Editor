@@ -181,6 +181,11 @@ export class AutoAssignService {
    * Generic assignment for mixed shapes with arcs and lines.
    * Uses delta-from-p0 matching against all available parameters,
    * including radius parameters with multiplier combos.
+   *
+   * Strategy (3-tier):
+   *   1. Shape-aware template matching (fast, covers common patterns)
+   *   2. SmartSuggestionEngine (broader combinatorial search)
+   *   3. Literal fallback (last resort — only if both engines fail)
    */
   _assignMixedArcShape(parameterStore, geometryStore, shapePoints) {
     const params = parameterStore.getParameters()
@@ -202,37 +207,68 @@ export class AutoAssignService {
     parameterStore.setPointExpression('p0', 'trimLeft', 'trimBottom')
 
     let assignedCount = 1 // p0
+    let literalCount = 0
 
     for (let i = 1; i < shapePoints.length; i++) {
       const pt = shapePoints[i]
       const dx = pt.x - p0.x
       const dy = pt.y - p0.y
 
-      const xExpr = this._matchMixedDelta(dx, 'x', L, H, radiusValues, params)
-      const yExpr = this._matchMixedDelta(dy, 'y', L, H, radiusValues, params)
+      // ── Tier 1: Shape-aware template matching ──
+      let xExpr = this._matchMixedDelta(dx, 'x', L, H, radiusValues, params)
+      let yExpr = this._matchMixedDelta(dy, 'y', L, H, radiusValues, params)
 
+      let assigned = false
       if (xExpr && yExpr) {
-        // Verify the expression evaluates correctly before assigning
         if (this._verifyPair(xExpr, yExpr, pt, parameterStore, geometryStore)) {
           parameterStore.setPointExpression(pt.id, xExpr, yExpr)
           assignedCount++
-        } else {
-          // Fallback to literal
-          parameterStore.setPointExpression(pt.id, pt.x.toFixed(4), pt.y.toFixed(4))
-          assignedCount++
+          assigned = true
         }
-      } else {
+      }
+
+      // ── Tier 2: SmartSuggestionEngine (broader search) ──
+      if (!assigned) {
+        const suggestions = this._suggEngine.suggest(
+          pt.id, pt.x, pt.y, parameterStore, shapePoints
+        )
+        for (const xCandidate of suggestions.x) {
+          for (const yCandidate of suggestions.y) {
+            if (this._verifyPair(xCandidate, yCandidate, pt, parameterStore, geometryStore)) {
+              parameterStore.setPointExpression(pt.id, xCandidate, yCandidate)
+              assignedCount++
+              assigned = true
+              // Track literal quality
+              const isLit = !isNaN(Number(xCandidate)) && !isNaN(Number(yCandidate))
+              if (isLit) literalCount++
+              break
+            }
+          }
+          if (assigned) break
+        }
+      }
+
+      // ── Tier 3: Literal fallback ──
+      if (!assigned) {
         parameterStore.setPointExpression(pt.id, pt.x.toFixed(4), pt.y.toFixed(4))
         assignedCount++
+        literalCount++
       }
     }
 
-    return assignedCount === shapePoints.length
+    // Return true only if we successfully assigned with mostly parametric results
+    // (allow up to 1 literal point — sometimes p0 or coincidence points are OK as literals)
+    return assignedCount === shapePoints.length && literalCount <= 1
   }
 
   /**
    * Match a coordinate delta for a mixed arc+line shape.
    * Tries all combinations of L, H, and any radius parameters.
+   * Expanded to handle more complex industrial shapes:
+   *   • Cross-dimensional combos (y-delta matching L-based expressions)
+   *   • Three-parameter combos (dim ± R1 ± R2)
+   *   • Negative dimension combos more thoroughly
+   *   • Sub-dimension parameters (L2, H2, etc.)
    */
   _matchMixedDelta(delta, axis, L, H, radiusValues, allParams) {
     const eps = 1.5
@@ -247,7 +283,7 @@ export class AutoAssignService {
       { value: -dim, expr: `p0.${axis} - ${dimName}` },
     ]
 
-    // Add L/H and other dimension
+    // Add other dimension
     if (Math.abs(dim - otherDim) > eps) {
       candidates.push(
         { value: otherDim,  expr: `p0.${axis} + ${otherDimName}` },
@@ -271,6 +307,7 @@ export class AutoAssignService {
         { value: dim - R,        expr: `p0.${axis} + ${dimName} - ${rName}` },
         { value: -(dim - R),     expr: `p0.${axis} - ${dimName} + ${rName}` },
         { value: dim + R,        expr: `p0.${axis} + ${dimName} + ${rName}` },
+        { value: -(dim + R),     expr: `p0.${axis} - ${dimName} - ${rName}` },
       )
 
       // dim ± 2*R
@@ -279,34 +316,70 @@ export class AutoAssignService {
         { value: -(dim - 2 * R), expr: `p0.${axis} - ${dimName} + 2 * ${rName}` },
       )
 
-      // Other dimension ± R
+      // Other dimension ± R (cross-dimensional — critical for arch+rect combos)
       if (Math.abs(dim - otherDim) > eps) {
         candidates.push(
           { value: otherDim - R,        expr: `p0.${axis} + ${otherDimName} - ${rName}` },
           { value: -(otherDim - R),     expr: `p0.${axis} - ${otherDimName} + ${rName}` },
+          { value: otherDim + R,        expr: `p0.${axis} + ${otherDimName} + ${rName}` },
+          { value: -(otherDim + R),     expr: `p0.${axis} - ${otherDimName} - ${rName}` },
           { value: otherDim - 2 * R,    expr: `p0.${axis} + ${otherDimName} - 2 * ${rName}` },
           { value: -(otherDim - 2 * R), expr: `p0.${axis} - ${otherDimName} + 2 * ${rName}` },
         )
       }
 
-      // Half-radius and half-dim combos
+      // Half-dim combos (common in arch shapes)
       candidates.push(
         { value: dim / 2,       expr: `p0.${axis} + ${dimName} / 2` },
+        { value: -dim / 2,      expr: `p0.${axis} - ${dimName} / 2` },
         { value: dim / 2 + R,   expr: `p0.${axis} + ${dimName} / 2 + ${rName}` },
         { value: dim / 2 - R,   expr: `p0.${axis} + ${dimName} / 2 - ${rName}` },
+        { value: -(dim / 2 - R), expr: `p0.${axis} - ${dimName} / 2 + ${rName}` },
       )
+
+      // Half of OTHER dimension ± R
+      if (Math.abs(dim - otherDim) > eps) {
+        candidates.push(
+          { value: otherDim / 2,       expr: `p0.${axis} + ${otherDimName} / 2` },
+          { value: -otherDim / 2,      expr: `p0.${axis} - ${otherDimName} / 2` },
+          { value: otherDim / 2 + R,   expr: `p0.${axis} + ${otherDimName} / 2 + ${rName}` },
+          { value: otherDim / 2 - R,   expr: `p0.${axis} + ${otherDimName} / 2 - ${rName}` },
+        )
+      }
     }
 
-    // Cross-radius combos (R1 ± R2, etc.)
+    // Cross-radius combos (R1 ± R2, dim ± R1 ± R2, etc.)
     for (let i = 0; i < radiusValues.length; i++) {
       for (let j = i + 1; j < radiusValues.length; j++) {
         const r1 = radiusValues[i], r2 = radiusValues[j]
         candidates.push(
-          { value: r1.value + r2.value,   expr: `p0.${axis} + ${r1.name} + ${r2.name}` },
-          { value: r1.value - r2.value,   expr: `p0.${axis} + ${r1.name} - ${r2.name}` },
+          { value: r1.value + r2.value,
+            expr: `p0.${axis} + ${r1.name} + ${r2.name}` },
+          { value: r1.value - r2.value,
+            expr: `p0.${axis} + ${r1.name} - ${r2.name}` },
+          { value: -(r1.value + r2.value),
+            expr: `p0.${axis} - ${r1.name} - ${r2.name}` },
+          { value: -(r1.value - r2.value),
+            expr: `p0.${axis} - ${r1.name} + ${r2.name}` },
+          // dim ± R1 ± R2 (3-param combos for corners with different radii)
           { value: dim - r1.value - r2.value,
             expr: `p0.${axis} + ${dimName} - ${r1.name} - ${r2.name}` },
+          { value: dim - r1.value + r2.value,
+            expr: `p0.${axis} + ${dimName} - ${r1.name} + ${r2.name}` },
+          { value: dim + r1.value - r2.value,
+            expr: `p0.${axis} + ${dimName} + ${r1.name} - ${r2.name}` },
+          { value: -(dim - r1.value - r2.value),
+            expr: `p0.${axis} - ${dimName} + ${r1.name} + ${r2.name}` },
         )
+        // otherDim ± R1 ± R2
+        if (Math.abs(dim - otherDim) > eps) {
+          candidates.push(
+            { value: otherDim - r1.value - r2.value,
+              expr: `p0.${axis} + ${otherDimName} - ${r1.name} - ${r2.name}` },
+            { value: otherDim - r1.value + r2.value,
+              expr: `p0.${axis} + ${otherDimName} - ${r1.name} + ${r2.name}` },
+          )
+        }
       }
     }
 
@@ -320,7 +393,18 @@ export class AutoAssignService {
         { value: -v, expr: `p0.${axis} - ${p.name}` },
         { value: dim + v,  expr: `p0.${axis} + ${dimName} + ${p.name}` },
         { value: dim - v,  expr: `p0.${axis} + ${dimName} - ${p.name}` },
+        { value: -(dim - v), expr: `p0.${axis} - ${dimName} + ${p.name}` },
+        { value: -(dim + v), expr: `p0.${axis} - ${dimName} - ${p.name}` },
       )
+      // Combo with radius params
+      for (const rp of radiusValues) {
+        const R = rp.value
+        candidates.push(
+          { value: v - R,  expr: `p0.${axis} + ${p.name} - ${rp.name}` },
+          { value: v + R,  expr: `p0.${axis} + ${p.name} + ${rp.name}` },
+          { value: -(v - R), expr: `p0.${axis} - ${p.name} + ${rp.name}` },
+        )
+      }
     }
 
     let best = null, bestErr = Infinity

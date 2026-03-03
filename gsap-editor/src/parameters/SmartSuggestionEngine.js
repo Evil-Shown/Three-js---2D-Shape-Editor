@@ -94,7 +94,7 @@ export class SmartSuggestionEngine {
       }
     }
 
-    // ── 4. Two-parameter combos (p0 + A − B) ────────────────────────────────
+    // ── 4. Two-parameter combos (p0 + A − B, p0 − A − B) ──────────────────
     for (let i = 0; i < params.length; i++) {
       for (let j = 0; j < params.length; j++) {
         if (i === j) continue
@@ -111,6 +111,14 @@ export class SmartSuggestionEngine {
         const err2 = Math.abs(delta - a.defaultValue - b.defaultValue)
         if (err2 < MATCH_EPSILON) {
           candidates.push({ expr: `p0.${axis} + ${a.name} + ${b.name}`, score: 0.8, error: err2 })
+        }
+
+        // p0 - A - B (both subtracted — common in negative-offset shapes)
+        if (i < j) {
+          const err3 = Math.abs(delta + a.defaultValue + b.defaultValue)
+          if (err3 < MATCH_EPSILON) {
+            candidates.push({ expr: `p0.${axis} - ${a.name} - ${b.name}`, score: 0.8, error: err3 })
+          }
         }
       }
     }

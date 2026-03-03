@@ -111,15 +111,50 @@ export class ExpressionValidator {
     const hasArcs = edges.some(e => e.type === 'arc')
     const hasRadius = params.some(p => p.type === ParameterType.RADIUS)
     if (hasArcs && !hasRadius) {
-      warnings.push({ type: 'missing_radius', message: 'Shape has arc edges but no RADIUS parameter defined' })
+      warnings.push({ type: 'missing_radius', message: 'Shape has arc edges but no RADIUS parameter defined — arc radii will be hardcoded in generated code' })
     }
 
-    // 7. Edge services — warning only (not required for valid JSON)
+    // 6b. Arc radius matching — check each arc has a matching parameter
+    if (hasArcs && hasRadius) {
+      const radiusParams = params.filter(p => p.type === ParameterType.RADIUS || /^R\d+$/.test(p.name))
+      const arcs = edges.filter(e => e.type === 'arc')
+      for (let i = 0; i < arcs.length; i++) {
+        const arc = arcs[i]
+        const matched = radiusParams.some(p => Math.abs(p.defaultValue - arc.radius) < 0.5)
+        if (!matched) {
+          warnings.push({
+            type: 'unmatched_arc_radius',
+            message: `Arc ${arc.id || i} has radius ${arc.radius.toFixed(2)} which doesn't match any RADIUS parameter — it will be hardcoded`,
+          })
+        }
+      }
+    }
+
+    // 7. Parametric completeness — literal point expressions
+    const literalPoints = []
+    for (const pt of shapePoints) {
+      const expr = pointExprs[pt.id]
+      if (expr) {
+        const xIsLiteral = !isNaN(Number(expr.x)) && !/[a-zA-Z]/.test(expr.x)
+        const yIsLiteral = !isNaN(Number(expr.y)) && !/[a-zA-Z]/.test(expr.y)
+        if (xIsLiteral && yIsLiteral) {
+          literalPoints.push(pt.id)
+        }
+      }
+    }
+    if (literalPoints.length > 0) {
+      warnings.push({
+        type: 'literal_points',
+        message: `${literalPoints.length} point(s) have literal (hardcoded) expressions instead of parametric: ${literalPoints.join(', ')}. Re-run "Auto-Assign All" after defining all parameters.`,
+      })
+    }
+
+    // 8. Edge services — warning only (not required for valid JSON)
     if (edges.length > 0 && Object.keys(edgeServices).length === 0) {
       warnings.push({ type: 'no_services', message: 'No edge services assigned — generated code will skip service offsets' })
     }
 
-    // 8. Shape metadata — now warnings so missing metadata never blocks generation
+    // 9. Shape metadata — now warnings so missing metadata never blocks generation
     const meta = parameterStore.getShapeMetadata()
     if (!meta.className || !meta.className.trim()) {
       warnings.push({ type: 'missing_metadata', message: 'Class name not set (using default)' })
@@ -138,6 +173,10 @@ export class ExpressionValidator {
         totalParameters: params.length,
         totalEdges: edges.length,
         assignedServices: Object.keys(edgeServices).length,
+        literalPoints: literalPoints.length,
+        parametricCompleteness: shapePoints.length > 0
+          ? Math.round(((shapePoints.length - literalPoints.length) / shapePoints.length) * 100)
+          : 0,
       },
     }
   }
