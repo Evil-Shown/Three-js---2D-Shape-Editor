@@ -233,11 +233,46 @@ export default function Editor() {
 
       console.log(`[geometryChanged] ${store.getEdgeCount()} edges in store`)
 
-      // ── Progressive auto-heal: fix tiny gaps between edges ──
-      const healResult = pathConnectivity.autoHealGaps()
-      if (healResult.totalWelds > 0) {
-        console.log(`[geometryChanged] Auto-healed ${healResult.totalWelds} gap(s) in ${healResult.passesUsed} pass(es)`)
+      // ── Smart auto-connect: progressive weld + almost-closed heal + closing edge ──
+      const connectResult = pathConnectivity.smartAutoConnect(20.0)
+      if (connectResult.totalWelds > 0) {
+        console.log(`[geometryChanged] Smart auto-connect: ${connectResult.totalWelds} fix(es), insertedEdge=${connectResult.insertedEdge}`)
         refreshMeshes(store, meshMap)
+
+        // If a new edge was inserted, create its mesh
+        if (connectResult.insertedEdge) {
+          const allEdges = store.getEdges()
+          for (const edge of allEdges) {
+            if (!meshMap.has(edge.id)) {
+              if (edge.type === 'line') {
+                const pts = [
+                  new THREE.Vector3(edge.start.x, edge.start.y, 0),
+                  new THREE.Vector3(edge.end.x, edge.end.y, 0),
+                ]
+                const geo = new THREE.BufferGeometry().setFromPoints(pts)
+                const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+                const line = new THREE.Line(geo, mat)
+                line.userData.edgeId = edge.id
+                scene.scene.add(line)
+                meshMap.set(edge.id, line)
+              } else if (edge.type === 'arc') {
+                const curve = new THREE.EllipseCurve(
+                  edge.center.x, edge.center.y,
+                  edge.radius, edge.radius,
+                  edge.startAngle, edge.endAngle,
+                  edge.clockwise, 0
+                )
+                const arcPts = curve.getPoints(64)
+                const geo = new THREE.BufferGeometry().setFromPoints(arcPts)
+                const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+                const line = new THREE.Line(geo, mat)
+                line.userData.edgeId = edge.id
+                scene.scene.add(line)
+                meshMap.set(edge.id, line)
+              }
+            }
+          }
+        }
       }
 
       checkShapeClosed(store, pathConnectivity)

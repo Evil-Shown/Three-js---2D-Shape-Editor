@@ -144,6 +144,11 @@ export class SmartSuggestionEngine {
       if (err < MATCH_EPSILON) {
         candidates.push({ expr: `p0.${axis} + ${p.name} / 2`, score: 0.75, error: err })
       }
+      // Negative half
+      const errN = Math.abs(delta + p.defaultValue / 2)
+      if (errN < MATCH_EPSILON) {
+        candidates.push({ expr: `p0.${axis} - ${p.name} / 2`, score: 0.75, error: errN })
+      }
     }
 
     // ── 5b. Reference-point + parameter offset (pN.x ± P) ───────────────────
@@ -163,6 +168,43 @@ export class SmartSuggestionEngine {
         const errMinus = Math.abs(spDelta + p.defaultValue)
         if (errMinus < MATCH_EPSILON) {
           candidates.push({ expr: `${sp.id}.${axis} - ${p.name}`, score: 0.85, error: errMinus })
+        }
+      }
+
+      // ── 5c. Reference-point + two-param combos (pN.x ± A ± B) ───────────
+      for (let i = 0; i < params.length; i++) {
+        for (let j = 0; j < params.length; j++) {
+          if (i === j) continue
+          const a = params[i], b = params[j]
+          if (a.defaultValue === 0 || b.defaultValue === 0) continue
+
+          const err1 = Math.abs(spDelta - a.defaultValue + b.defaultValue)
+          if (err1 < MATCH_EPSILON) {
+            candidates.push({ expr: `${sp.id}.${axis} + ${a.name} - ${b.name}`, score: 0.78, error: err1 })
+          }
+
+          const err2 = Math.abs(spDelta - a.defaultValue - b.defaultValue)
+          if (err2 < MATCH_EPSILON) {
+            candidates.push({ expr: `${sp.id}.${axis} + ${a.name} + ${b.name}`, score: 0.78, error: err2 })
+          }
+        }
+      }
+    }
+
+    // ── 5d. Three-param combos (p0.x + A - B + C, p0.x + A - B - C) ────────
+    //   For complex shapes: e.g., p0.x + L - R1 - R2, p0.x + L/2 + R1
+    for (const p of params) {
+      if (p.defaultValue === 0) continue
+      for (const q of params) {
+        if (q === p || q.defaultValue === 0) continue
+        // p0 + A/2 ± B
+        const errHpP = Math.abs(delta - p.defaultValue / 2 - q.defaultValue)
+        if (errHpP < MATCH_EPSILON) {
+          candidates.push({ expr: `p0.${axis} + ${p.name} / 2 + ${q.name}`, score: 0.72, error: errHpP })
+        }
+        const errHpM = Math.abs(delta - p.defaultValue / 2 + q.defaultValue)
+        if (errHpM < MATCH_EPSILON) {
+          candidates.push({ expr: `p0.${axis} + ${p.name} / 2 - ${q.name}`, score: 0.72, error: errHpM })
         }
       }
     }

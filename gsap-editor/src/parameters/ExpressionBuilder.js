@@ -130,7 +130,10 @@ export class ExpressionBuilder {
       if (actual) {
         const dx = Math.abs(xVal - actual.x)
         const dy = Math.abs(yVal - actual.y)
-        if (dx < 0.1 && dy < 0.1) {
+        // FIX: Use 1.5 tolerance — arc endpoints computed via cos/sin often
+        // have ~0.5-1.0 floating-point drift from the drawn coordinates.
+        // The old 0.1 tolerance caused false red indicators on valid arcs.
+        if (dx < 1.5 && dy < 1.5) {
           summary.verified++
         } else {
           summary.errors.push({
@@ -177,8 +180,15 @@ export class ExpressionBuilder {
     const seen = new Set()
 
     const addPoint = (x, y) => {
-      const key = `${Math.round(x * 100)}:${Math.round(y * 100)}`
+      // FIX: Use 1000 (3 dp) for dedup key — the old 100 (2 dp) merged
+      // distinct arc endpoints that were < 0.01 apart, creating phantom duplicates.
+      // Also check proximity to all existing points as a safety net.
+      const key = `${Math.round(x * 1000)}:${Math.round(y * 1000)}`
       if (seen.has(key)) return
+      // Extra proximity check: if any existing point is within 0.5mm, skip
+      for (const p of points) {
+        if (Math.hypot(p.x - x, p.y - y) < 0.5) return
+      }
       seen.add(key)
       points.push({ id: `p${points.length}`, x, y })
     }
@@ -257,17 +267,26 @@ export class ExpressionBuilder {
   }
 
   _extractIdentifiers(expr) {
-    const cleaned = expr
-      .replace(new RegExp(POINT_REF_PATTERN.source, 'g'), '')
-      .replace(/\d+\.?\d*/g, '')
-      .replace(/[+\-*/().,<>=!&|?:%^~\s]/g, ' ')
+    // FIX: Extract identifiers BEFORE stripping digits.
+    // The old approach stripped all digits first, which turned "R1" into "R",
+    // "H2" into "H", etc., causing false "Unknown identifier" errors.
 
+    // Step 1: Remove point references (p0.x, p1.y, etc.) first
+    let cleaned = expr.replace(new RegExp(POINT_REF_PATTERN.source, 'g'), ' __PREF__ ')
+
+    // Step 2: Extract all word-like tokens from the original expression
     const matches = [...cleaned.matchAll(new RegExp(IDENTIFIER_PATTERN.source, 'g'))]
     const identifiers = new Set()
     for (const m of matches) {
-      if (m[1] && !MATH_BUILTINS.has(m[1]) && !/^p\d+$/.test(m[1])) {
-        identifiers.add(m[1])
-      }
+      const ident = m[1]
+      if (!ident) continue
+      // Skip internal placeholder, builtins, point ids, and pure numbers
+      if (ident === '__PREF__') continue
+      if (MATH_BUILTINS.has(ident)) continue
+      if (/^p\d+$/.test(ident)) continue
+      // Skip pure numeric-looking tokens (shouldn't match IDENTIFIER_PATTERN, but guard)
+      if (/^\d+$/.test(ident)) continue
+      identifiers.add(ident)
     }
     return identifiers
   }

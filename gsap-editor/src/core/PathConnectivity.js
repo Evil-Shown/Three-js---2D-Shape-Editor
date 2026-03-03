@@ -15,7 +15,7 @@ import { bus } from './EventBus.js'
 const DEFAULT_EPSILON = 2.0
 
 // Progressive heal passes — each wider than the last
-const HEAL_PASSES = [2.0, 4.0, 6.0, 8.0]
+const HEAL_PASSES = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
 
 export class PathConnectivity {
   constructor(geometryStore) {
@@ -304,7 +304,7 @@ export class PathConnectivity {
    * within `maxGap`, force-weld them together (even if > normal epsilon).
    * This catches the common "almost closed" case.
    */
-  healAlmostClosed(maxGap = 10.0) {
+  healAlmostClosed(maxGap = 15.0) {
     const edges = this.store.getEdges()
     if (edges.length < 2) return false
 
@@ -391,5 +391,94 @@ export class PathConnectivity {
     return vertices
       .filter(v => v.degree === 1)
       .map(v => ({ x: v.x, y: v.y, _isOpenEnd: true }))
+  }
+
+  /* ════════════════════════════════════════════════════════
+   *  7. SMART AUTO-CONNECT
+   * ════════════════════════════════════════════════════════
+   *
+   * Full-spectrum healing that:
+   *   a) Runs progressive weld passes
+   *   b) Attempts almost-closed healing
+   *   c) Inserts a closing line edge if only 2 open endpoints remain
+   *   d) Handles degree-3+ junctions by snapping overlapping endpoints
+   *
+   * Returns { healed: boolean, totalWelds: number, insertedEdge: boolean }
+   */
+
+  smartAutoConnect(maxClosingGap = 20.0) {
+    const edges = this.store.getEdges()
+    if (edges.length < 2) return { healed: false, totalWelds: 0, insertedEdge: false }
+
+    let totalWelds = 0
+    let insertedEdge = false
+
+    // Phase 1: Progressive weld
+    const weldResult = this.autoHealGaps()
+    totalWelds += weldResult.totalWelds
+    if (weldResult.healed) {
+      return { healed: true, totalWelds, insertedEdge: false }
+    }
+
+    // Phase 2: Almost-closed heal (larger gap tolerance)
+    const almostHealed = this.healAlmostClosed(maxClosingGap)
+    if (almostHealed) {
+      const check = this.validate(this.store.getEdges())
+      if (check.closed) return { healed: true, totalWelds: totalWelds + 1, insertedEdge: false }
+    }
+
+    // Phase 3: If exactly 2 open endpoints remain, insert a line edge to close
+    const result = this.validate(this.store.getEdges())
+    if (!result.closed) {
+      const degree1 = result.openVertices.filter(v => v.degree === 1)
+      if (degree1.length === 2) {
+        const gap = Math.hypot(degree1[0].x - degree1[1].x, degree1[0].y - degree1[1].y)
+        if (gap <= maxClosingGap) {
+          const addedId = this.autoInsertClosingEdge(degree1[0], degree1[1])
+          if (addedId) {
+            insertedEdge = true
+            totalWelds++
+            console.log(`[smartAutoConnect] Inserted closing edge (gap=${gap.toFixed(2)})`)
+          }
+        }
+      }
+
+      // Phase 4: Handle junctions — weld degree-3+ to nearest degree-1
+      if (!insertedEdge && result.openVertices.length > 2) {
+        const degree3Plus = result.openVertices.filter(v => v.degree >= 3)
+        for (const jv of degree3Plus) {
+          // Try wider weld around junctions
+          const savedEps = this.epsilon
+          this.epsilon = 6.0
+          const w = this.autoWeld()
+          this.epsilon = savedEps
+          totalWelds += w
+        }
+      }
+    }
+
+    const finalResult = this.validate(this.store.getEdges())
+    return { healed: finalResult.closed, totalWelds, insertedEdge }
+  }
+
+  /**
+   * Insert a new line edge between two open endpoint vertices to close the shape.
+   * Returns the new edge ID or null if either vertex is invalid.
+   */
+  autoInsertClosingEdge(vertex1, vertex2) {
+    if (!vertex1 || !vertex2) return null
+
+    const id = this.store.addEdge({
+      type: 'line',
+      start: { x: vertex1.x, y: vertex1.y },
+      end:   { x: vertex2.x, y: vertex2.y },
+    })
+
+    if (id) {
+      console.log(`[autoInsertClosingEdge] Added line from (${vertex1.x.toFixed(2)}, ${vertex1.y.toFixed(2)}) to (${vertex2.x.toFixed(2)}, ${vertex2.y.toFixed(2)})`)
+      bus.emit('geometryHealed', { insertedEdge: true, edgeId: id })
+    }
+
+    return id
   }
 }
