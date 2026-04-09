@@ -3,6 +3,7 @@
 
 import * as THREE from 'three'
 import { bus } from '../core/EventBus.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class CircleTool {
   constructor(deps) {
@@ -88,7 +89,7 @@ export class CircleTool {
           const curve = new THREE.EllipseCurve(c.x, c.y, r, r, 0, Math.PI * 2, false, 0)
           const pts = curve.getPoints(128)
           const geo = new THREE.BufferGeometry().setFromPoints(pts)
-          const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+          const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
           const line = new THREE.Line(geo, mat)
           line.userData.edgeId = this._id
           scene.add(line)

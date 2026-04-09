@@ -1,0 +1,76 @@
+# Full stack for ERP-integrated shape editing + background geometry generation.
+# From this repo root:
+#   docker compose up --build
+#
+# The Java worker build context points to the sibling GSAP Geometry Core repository.
+# Adjust the context path if your checkout layout differs.
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: gsap_editor
+    ports:
+      - "3306:3306"
+    volumes:
+      - gsap_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: gsap_editor
+      REDIS_URL: redis://redis:6379
+      AUTH_DISABLED: "true"
+      CORS_ORIGIN: http://localhost:5173
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build:
+      context: ../GSAP Geometry Core
+      dockerfile: Dockerfile
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DATABASE: gsap_editor
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      OUTPUT_DIR: /data/shapes/output
+      SHAPE_JOB_LIST_KEY: gsap:shape-processing:jobs
+    volumes:
+      - gsap_generated:/data/shapes/output
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  gsap_mysql_data:
+  gsap_generated:

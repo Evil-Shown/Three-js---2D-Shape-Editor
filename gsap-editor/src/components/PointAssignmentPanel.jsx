@@ -14,6 +14,7 @@ import { ExpressionBuilder } from '../parameters/ExpressionBuilder.js'
 import { SmartSuggestionEngine } from '../parameters/SmartSuggestionEngine.js'
 import { AutoAssignService } from '../parameters/AutoAssignService.js'
 import { POINT_STATUS_COLORS } from '../parameters/ParameterTypes.js'
+import { ui } from '../theme/uiTheme.js'
 
 export default function PointAssignmentPanel({
   paramStore,
@@ -86,12 +87,12 @@ export default function PointAssignmentPanel({
       {/* Progress bar */}
       <div style={progressContainerStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ color: '#888', fontSize: 11, fontWeight: 600 }}>
+          <span style={{ color: ui.textMuted, fontSize: 11, fontWeight: 600 }}>
             Point Assignment
           </span>
           <span style={{
             fontSize: 11, fontWeight: 700,
-            color: progressPct === 100 ? '#44cc66' : '#cccc44',
+            color: progressPct === 100 ? ui.success : '#ca8a04',
           }}>
             {verifiedCount}/{shapePoints.length} verified
           </span>
@@ -101,8 +102,8 @@ export default function PointAssignmentPanel({
             ...progressBarFill,
             width: `${progressPct}%`,
             background: progressPct === 100
-              ? 'linear-gradient(90deg, #2a8a4a, #44cc66)'
-              : 'linear-gradient(90deg, #8a8a2a, #cccc44)',
+              ? 'linear-gradient(90deg, #16a34a, #4ade80)'
+              : 'linear-gradient(90deg, #ca8a04, #facc15)',
           }} />
         </div>
       </div>
@@ -160,7 +161,7 @@ function PointRow({
   const [yPreview, setYPreview] = useState(null)
   const [saved, setSaved] = useState(false)
 
-  const statusColor = POINT_STATUS_COLORS[status] || '#666'
+  const statusColor = POINT_STATUS_COLORS[status] || ui.textMuted
   const isP0 = point.id === 'p0'
 
   // Sync with external changes
@@ -222,8 +223,8 @@ function PointRow({
   return (
     <div style={{
       ...pointContainerStyle,
-      borderColor: isExpanded ? '#7fffd4' : '#2a2d30',
-      background: isExpanded ? '#1a2520' : '#1e2124',
+      borderColor: isExpanded ? ui.accentBorder : ui.border,
+      background: isExpanded ? ui.accentSoft : ui.bgPanel,
     }}>
       {/* Collapsed row — always visible */}
       <div style={pointHeaderStyle} onClick={onToggle}>
@@ -234,17 +235,17 @@ function PointRow({
           flexShrink: 0,
         }} />
         {/* Point ID */}
-        <span style={{ color: '#7fffd4', fontFamily: 'monospace', fontWeight: 700, fontSize: 12, minWidth: 26 }}>
+        <span style={{ color: ui.accent, fontFamily: 'monospace', fontWeight: 700, fontSize: 12, minWidth: 26 }}>
           {point.id}
         </span>
         {/* Coordinates */}
-        <span style={{ color: '#555', fontSize: 10, minWidth: 80 }}>
+        <span style={{ color: ui.textSubtle, fontSize: 10, minWidth: 80 }}>
           ({point.x.toFixed(1)}, {point.y.toFixed(1)})
         </span>
         {/* Expression preview */}
         {expression && expression.x ? (
           <span style={{
-            color: status === 'verified' ? '#66aa77' : '#777',
+            color: status === 'verified' ? ui.success : ui.textSubtle,
             fontSize: 10, fontFamily: 'monospace',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             flex: 1, textAlign: 'right',
@@ -252,12 +253,12 @@ function PointRow({
             {expression.x} · {expression.y}
           </span>
         ) : (
-          <span style={{ color: '#aa4444', fontSize: 10, flex: 1, textAlign: 'right' }}>
+          <span style={{ color: ui.danger, fontSize: 10, flex: 1, textAlign: 'right' }}>
             unset
           </span>
         )}
         {/* Expand arrow */}
-        <span style={{ color: '#555', fontSize: 10, marginLeft: 4 }}>
+        <span style={{ color: ui.textSubtle, fontSize: 10, marginLeft: 4 }}>
           {isExpanded ? '▾' : '▸'}
         </span>
       </div>
@@ -269,10 +270,10 @@ function PointRow({
             <div style={p0InfoStyle}>
               <span style={{ fontSize: 16, marginRight: 8 }}>⚓</span>
               <div>
-                <div style={{ fontWeight: 700, color: '#7fffd4', fontSize: 12 }}>Shape Origin</div>
-                <div style={{ color: '#999', fontSize: 11, marginTop: 2 }}>
-                  X = <code style={{ color: '#ccc' }}>trimLeft</code>,
-                  Y = <code style={{ color: '#ccc' }}>trimBottom</code>
+                <div style={{ fontWeight: 700, color: ui.accent, fontSize: 12 }}>Shape Origin</div>
+                <div style={{ color: ui.textMuted, fontSize: 11, marginTop: 2 }}>
+                  X = <code style={{ color: ui.textSecondary }}>trimLeft</code>,
+                  Y = <code style={{ color: ui.textSecondary }}>trimBottom</code>
                 </div>
               </div>
             </div>
@@ -300,9 +301,9 @@ function PointRow({
                 style={{
                   ...saveBtnStyle,
                   ...(saved ? {
-                    background: '#1a3a28',
-                    borderColor: '#66ee88',
-                    color: '#66ee88',
+                    background: ui.successSoft,
+                    borderColor: ui.success,
+                    color: ui.success,
                   } : {}),
                 }}
                 onClick={handleSave}
@@ -326,7 +327,7 @@ const progressContainerStyle = {
 const progressBarBg = {
   height: 4,
   borderRadius: 2,
-  background: '#2a2d30',
+  background: ui.border,
   overflow: 'hidden',
 }
 
@@ -338,30 +339,30 @@ const progressBarFill = {
 
 const autoAssignBtnStyle = {
   flex: 2, padding: '7px 10px',
-  background: 'linear-gradient(135deg, #1a3328, #1e2e3a)',
-  border: '1px solid #7fffd4',
-  borderRadius: 5, color: '#7fffd4',
+  background: `linear-gradient(135deg, ${ui.accentSoft}, #e0f2fe)`,
+  border: `1px solid ${ui.accentBorder}`,
+  borderRadius: 8, color: ui.accent,
   fontSize: 12, fontWeight: 700, cursor: 'pointer',
 }
 
 const fillMissingBtnStyle = {
   flex: 1, padding: '7px 10px',
-  background: '#1e2124',
-  border: '1px solid #3a3d42',
-  borderRadius: 5, color: '#aaa',
+  background: ui.bgPanel,
+  border: `1px solid ${ui.borderStrong}`,
+  borderRadius: 8, color: ui.textMuted,
   fontSize: 11, fontWeight: 600, cursor: 'pointer',
 }
 
 const autoMsgStyle = {
   padding: '6px 8px', marginBottom: 8,
-  background: '#0f2018', borderRadius: 4,
-  border: '1px solid #2a5a38',
-  color: '#66cc88', fontSize: 11,
+  background: ui.successSoft, borderRadius: 6,
+  border: `1px solid ${ui.success}`,
+  color: ui.success, fontSize: 11,
 }
 
 const pointContainerStyle = {
-  borderRadius: 6,
-  border: '1px solid #2a2d30',
+  borderRadius: 8,
+  border: `1px solid ${ui.border}`,
   marginBottom: 4,
   overflow: 'hidden',
   transition: 'border-color 0.15s',
@@ -377,26 +378,26 @@ const pointHeaderStyle = {
 
 const pointEditorStyle = {
   padding: '6px 10px 10px',
-  borderTop: '1px solid #2a2d30',
-  background: '#181c20',
+  borderTop: `1px solid ${ui.border}`,
+  background: ui.bgPanel,
 }
 
 const p0InfoStyle = {
   display: 'flex',
   alignItems: 'center',
   padding: '8px 10px',
-  background: '#1f1812',
-  borderRadius: 5,
-  border: '1px solid #3d2810',
+  background: '#fffbeb',
+  borderRadius: 6,
+  border: '1px solid #fde68a',
 }
 
 const saveBtnStyle = {
   width: '100%',
   padding: '5px 12px',
-  background: '#1a3328',
-  border: '1px solid #44cc66',
-  borderRadius: 4,
-  color: '#44cc66',
+  background: ui.successSoft,
+  border: `1px solid ${ui.success}`,
+  borderRadius: 6,
+  color: ui.success,
   fontSize: 11,
   fontWeight: 600,
   cursor: 'pointer',
@@ -405,7 +406,7 @@ const saveBtnStyle = {
 
 const emptyStyle = {
   padding: '16px 12px',
-  color: '#666',
+  color: ui.textMuted,
   fontSize: 12,
   textAlign: 'center',
 }

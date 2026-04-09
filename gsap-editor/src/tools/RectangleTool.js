@@ -3,6 +3,7 @@
 
 import * as THREE from 'three'
 import { bus } from '../core/EventBus.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class RectangleTool {
   constructor(deps) {
@@ -93,7 +94,7 @@ export class RectangleTool {
             const geo = new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(s.x, s.y, 0), new THREE.Vector3(e.x, e.y, 0)
             ])
-            const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+            const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
             const line = new THREE.Line(geo, mat)
             line.userData.edgeId = id
             scene.add(line)

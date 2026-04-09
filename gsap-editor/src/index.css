@@ -1,3 +1,24 @@
+:root {
+  --sd-bg: #f0f4f8;
+  --sd-surface: #ffffff;
+  --sd-panel: #f8fafc;
+  --sd-border: #e2e8f0;
+  --sd-border-strong: #cbd5e1;
+  --sd-text: #0f172a;
+  --sd-text-secondary: #334155;
+  --sd-text-muted: #64748b;
+  --sd-text-subtle: #94a3b8;
+  --sd-accent: #0d9488;
+  --sd-accent-hover: #0f766e;
+  --sd-accent-soft: rgba(13, 148, 136, 0.12);
+  --sd-warn: #c2410c;
+  --sd-warn-soft: rgba(194, 65, 12, 0.1);
+  --sd-shadow: 0 4px 24px rgba(15, 23, 42, 0.07);
+  --sd-shadow-dropdown: 0 16px 40px rgba(15, 23, 42, 0.12);
+  --sd-radius: 10px;
+  --sd-font: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -6,11 +27,13 @@
 
 html, body, #root {
   width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #181a1b;
-  color: #e0e3e6;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100%;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--sd-bg);
+  color: var(--sd-text);
+  font-family: var(--sd-font);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -26,16 +49,17 @@ input {
   font-family: inherit;
 }
 
-/* --- App header: balanced layout, dropdowns always visible --- */
+/* --- App header --- */
 .app-header {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px 20px;
-  min-height: 52px;
-  padding: 0 20px;
-  background: linear-gradient(180deg, #252a2e 0%, #1e2124 100%);
-  border-bottom: 1px solid #3a3f44;
+  min-height: 56px;
+  padding: 0 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-bottom: 1px solid var(--sd-border);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
   z-index: 1000;
   user-select: none;
   flex-shrink: 0;
@@ -43,9 +67,9 @@ input {
 
 .app-header-brand {
   font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0.5px;
-  color: #7fffd4;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  color: var(--sd-accent);
   margin-right: 4px;
 }
 
@@ -59,34 +83,33 @@ input {
 .app-header-menu-trigger {
   padding: 8px 14px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: #c8ccd0;
-  font-size: 15px;
+  color: var(--sd-text-secondary, #334155);
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .app-header-menu-trigger:hover {
-  background: #2d3338;
-  color: #fff;
+  background: var(--sd-accent-soft);
+  color: var(--sd-accent);
 }
 
 .app-header-menu-trigger.is-open {
-  background: #2d3338;
-  color: #7fffd4;
+  background: var(--sd-accent-soft);
+  color: var(--sd-accent-hover);
 }
 
-/* Dropdown rendered in portal so it's never clipped */
 .app-header-dropdown {
   position: fixed;
   min-width: 220px;
   padding: 6px 0;
-  background: #2a3036;
-  border: 1px solid #3a4149;
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  background: var(--sd-surface);
+  border: 1px solid var(--sd-border);
+  border-radius: var(--sd-radius);
+  box-shadow: var(--sd-shadow-dropdown);
   z-index: 10000;
 }
 
@@ -95,29 +118,29 @@ input {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 15px;
-  color: #e0e4e8;
+  font-size: 14px;
+  color: var(--sd-text);
   cursor: pointer;
   transition: background 0.1s;
 }
 
 .app-header-dropdown-item:hover:not(.is-disabled) {
-  background: #353b42;
+  background: var(--sd-panel);
 }
 
 .app-header-dropdown-item.is-disabled {
-  color: #5c636a;
+  color: var(--sd-text-subtle);
   cursor: default;
 }
 
 .app-header-dropdown-item-shortcut {
-  font-size: 13px;
-  color: #6b7280;
+  font-size: 12px;
+  color: var(--sd-text-muted);
   margin-left: 16px;
 }
 
 .app-header-dropdown-divider {
   height: 1px;
-  background: #3a4149;
+  background: var(--sd-border);
   margin: 6px 0;
 }

@@ -51,10 +51,10 @@ function ToastItem({ item, onRemove }) {
   }
 
   const colors = {
-    success: { bg: '#1a3d2b', border: '#2dd67b', icon: '#2dd67b', spin: false },
-    error  : { bg: '#3d1a1a', border: '#f06060', icon: '#f06060', spin: false },
-    info   : { bg: '#1a2b4a', border: '#60aaff', icon: '#60aaff', spin: false },
-    loading: { bg: '#2a2d32', border: '#9ca3af', icon: '#9ca3af', spin: true  },
+    success: { bg: '#ecfdf5', border: '#10b981', icon: '#059669', spin: false },
+    error  : { bg: '#fef2f2', border: '#f87171', icon: '#dc2626', spin: false },
+    info   : { bg: '#eff6ff', border: '#60a5fa', icon: '#2563eb', spin: false },
+    loading: { bg: '#f8fafc', border: '#cbd5e1', icon: '#64748b', spin: true  },
   }
 
   const c = colors[item.type] || colors.info
@@ -71,10 +71,10 @@ function ToastItem({ item, onRemove }) {
         background    : c.bg,
         border        : `1px solid ${c.border}`,
         borderRadius  : 8,
-        color         : '#e5e7eb',
+        color         : '#0f172a',
         fontSize      : 14,
         fontWeight    : 500,
-        boxShadow     : '0 4px 20px rgba(0,0,0,0.45)',
+        boxShadow     : '0 8px 30px rgba(15, 23, 42, 0.12)',
         cursor        : 'pointer',
         minWidth      : 260,
         maxWidth      : 400,

@@ -8,6 +8,7 @@
 // This eliminates constant tool switching between Line and Arc.
 
 import * as THREE from 'three'
+import { CAD } from '../theme/cadTheme.js'
 import { bus } from '../core/EventBus.js'
 
 const MODE_LINE = 'line'
@@ -335,7 +336,7 @@ export class SketchTool {
           const geo = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(s.x, s.y, 0), new THREE.Vector3(e.x, e.y, 0)
           ])
-          const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+          const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
           const line = new THREE.Line(geo, mat)
           line.userData.edgeId = this._id
           scene.add(line)
@@ -369,7 +370,7 @@ export class SketchTool {
           const curve = new THREE.EllipseCurve(c.x, c.y, radius, radius, startAngle, endAngle, clockwise, 0)
           const pts = curve.getPoints(64)
           const geo = new THREE.BufferGeometry().setFromPoints(pts)
-          const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+          const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
           const line = new THREE.Line(geo, mat)
           line.userData.edgeId = this._id
           scene.add(line)

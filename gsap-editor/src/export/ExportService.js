@@ -835,22 +835,53 @@ export class ExportService {
    * This is needed for Java's resize2() which computes offset arc centers
    * for cutting/coating edges.
    *
-   * Returns { x: expression, y: expression } or null if no match found.
+   * Returns { x: expression, y: expression }.
+   * Falls back to numeric-safe expressions when no parameter match is found.
    */
   _computeCenterExpression(cx, cy, shapePoints, params, pointExprs) {
-    if (shapePoints.length === 0 || params.length === 0) return null
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
+      return { x: '0.0', y: '0.0' }
+    }
 
-    const p0 = shapePoints[0]
+    const p0 = Array.isArray(shapePoints) && shapePoints.length > 0
+      ? shapePoints[0]
+      : null
+
+    if (!p0) {
+      return {
+        x: this._formatNumberLiteral(cx),
+        y: this._formatNumberLiteral(cy),
+      }
+    }
+
     const dx = cx - p0.x
     const dy = cy - p0.y
 
-    const xExpr = this._matchDeltaToExpression(dx, 'x', params)
-    const yExpr = this._matchDeltaToExpression(dy, 'y', params)
+    const hasParams = Array.isArray(params) && params.length > 0
+    const xExpr = hasParams ? this._matchDeltaToExpression(dx, 'x', params) : null
+    const yExpr = hasParams ? this._matchDeltaToExpression(dy, 'y', params) : null
 
     if (xExpr && yExpr) {
       return { x: xExpr, y: yExpr }
     }
-    return null
+
+    return {
+      x: this._buildFallbackCenterExpression(dx, 'x'),
+      y: this._buildFallbackCenterExpression(dy, 'y'),
+    }
+  }
+
+  _buildFallbackCenterExpression(delta, axis) {
+    const absDelta = Math.abs(delta)
+    if (absDelta < 1e-9) return `p0.${axis}`
+
+    const op = delta >= 0 ? '+' : '-'
+    return `p0.${axis} ${op} ${this._formatNumberLiteral(absDelta)}`
+  }
+
+  _formatNumberLiteral(value) {
+    const rounded = Math.round(value * 10000) / 10000
+    return Number(rounded).toString()
   }
 
   /**

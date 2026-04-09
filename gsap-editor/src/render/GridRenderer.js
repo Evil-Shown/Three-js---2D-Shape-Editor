@@ -1,6 +1,7 @@
 // src/render/GridRenderer.js
 // Draws adaptive grid (minor/major lines) as Three.js lines.
 import * as THREE from 'three'
+import { CAD } from '../theme/cadTheme.js'
 
 export class GridRenderer {
   constructor(scene, coordEngine) {
@@ -15,8 +16,8 @@ export class GridRenderer {
     const minor = this.coord.gridSize()
     const major = this.coord.majorGridSize()
     const z = -1
-    const colorMinor = 0x222222
-    const colorMajor = 0x444444
+    const colorMinor = CAD.gridMinor
+    const colorMajor = CAD.gridMajor
 
     // Minor grid
     for (let x = Math.ceil(bounds.left / minor) * minor; x < bounds.right; x += minor) {

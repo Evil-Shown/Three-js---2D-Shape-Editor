@@ -3,6 +3,7 @@
 // Uses mathematical hit testing (not raycasting).
 
 import { bus } from '../core/EventBus.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class SelectTool {
   constructor(deps) {
@@ -137,11 +138,11 @@ export class SelectTool {
     if (newHover !== this._hovered) {
       // Remove old hover highlight
       if (this._hovered && !this._selected.has(this._hovered)) {
-        this._setEdgeColor(this._hovered, 0xffffff)
+        this._setEdgeColor(this._hovered, CAD.edge)
       }
       // Add new hover highlight
       if (newHover && !this._selected.has(newHover)) {
-        this._setEdgeColor(newHover, 0x88aaff)
+        this._setEdgeColor(newHover, CAD.edgeHover)
       }
       this._hovered = newHover
       this.canvas.style.cursor = newHover ? 'pointer' : 'default'
@@ -209,15 +210,15 @@ export class SelectTool {
   }
 
   _applyHighlights() {
-    for (const id of this._selected) this._setEdgeColor(id, 0x44aaff)
+    for (const id of this._selected) this._setEdgeColor(id, CAD.edgeSelected)
     // Un-highlight anything not selected (except hovered)
     for (const [id] of this._meshMap) {
-      if (!this._selected.has(id) && id !== this._hovered) this._setEdgeColor(id, 0xffffff)
+      if (!this._selected.has(id) && id !== this._hovered) this._setEdgeColor(id, CAD.edge)
     }
   }
 
   _clearHighlights() {
-    for (const [id] of this._meshMap) this._setEdgeColor(id, 0xffffff)
+    for (const [id] of this._meshMap) this._setEdgeColor(id, CAD.edge)
   }
 
   _setEdgeColor(id, color) {

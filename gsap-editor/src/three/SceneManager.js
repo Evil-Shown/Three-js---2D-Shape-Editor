@@ -1,11 +1,12 @@
 import * as THREE from 'three'
+import { CAD } from '../theme/cadTheme.js'
 
 export class SceneManager {
   constructor(canvas) {
     this.canvas = canvas
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x111111)
+    this.scene.background = new THREE.Color(CAD.background)
 
     const rect = canvas.getBoundingClientRect()
     const aspect = (rect.width || window.innerWidth) / (rect.height || window.innerHeight)

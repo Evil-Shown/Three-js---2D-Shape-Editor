@@ -3,6 +3,7 @@
 
 import * as THREE from 'three'
 import { bus } from '../core/EventBus.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class TrimTool {
   constructor(deps) {
@@ -103,7 +104,7 @@ export class TrimTool {
         new THREE.Vector3(edge.start.x, edge.start.y, 0),
         new THREE.Vector3(edge.end.x, edge.end.y, 0)
       ])
-      const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+      const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
       const line = new THREE.Line(geo, mat)
       line.userData.edgeId = id
       scene.add(line); meshMap.set(id, line)

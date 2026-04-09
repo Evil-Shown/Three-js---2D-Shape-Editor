@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import ReactDOM from 'react-dom'
+import { Link } from 'react-router-dom'
 import * as THREE from 'three'
 import { SceneManager } from '../three/SceneManager'
 import { GeometryStore } from '../store/GeometryStore'
@@ -40,7 +41,11 @@ import DetectedDimensionsPanel from './DetectedDimensionsPanel'
 import StatusBar from './StatusBar'
 import { Toaster, toast } from './Toast'
 import SaveConfirmModal from './SaveConfirmModal'
-import { saveShape, getNextShapeNumber } from '../api/shapesApi'
+import { saveShape, getNextShapeNumber, getShape, updateShape } from '../api/shapesApi'
+import { applyShapePayloadToStores } from '../import/shapePayloadImport'
+import { rebuildEdgeMeshes } from '../three/rebuildEdgeMeshes'
+import { CAD } from '../theme/cadTheme.js'
+import { ui } from '../theme/uiTheme.js'
 
 const TOOL_DEFS = [
   { key: 'select',      icon: '⇱', label: 'Select',      shortcut: 'S', group: 'edit' },
@@ -62,7 +67,7 @@ const PARAM_TOOL_DEFS = [
   { key: 'pointTagger', icon: '📍', label: 'Tag Points', shortcut: 'P', group: 'tag' },
 ]
 
-export default function Editor() {
+export default function Editor({ shapeId = null } = {}) {
   const canvasRef = useRef(null)
   const commandRef = useRef(null)
   const enginesRef = useRef(null)
@@ -105,6 +110,8 @@ export default function Editor() {
   const [pointExprInputX, setPointExprInputX] = useState('')
   const [pointExprInputY, setPointExprInputY] = useState('')
   const canvasAreaRef = useRef(null)
+  /** Set when a row is loaded from GET /shapes/:id — used so save always updates that row (PUT). */
+  const loadedShapeDbIdRef = useRef(null)
 
   const syncNextShapeMetadata = useCallback(async () => {
     const eng = enginesRef.current
@@ -203,7 +210,8 @@ export default function Editor() {
       exportService: new ExportService(store, paramStore),
     }
 
-    syncNextShapeMetadata()
+    let cancelled = false
+    loadedShapeDbIdRef.current = null
 
     // --- Event subscriptions ---
     const unsubs = []
@@ -250,7 +258,7 @@ export default function Editor() {
                   new THREE.Vector3(edge.end.x, edge.end.y, 0),
                 ]
                 const geo = new THREE.BufferGeometry().setFromPoints(pts)
-                const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+                const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
                 const line = new THREE.Line(geo, mat)
                 line.userData.edgeId = edge.id
                 scene.scene.add(line)
@@ -264,7 +272,7 @@ export default function Editor() {
                 )
                 const arcPts = curve.getPoints(64)
                 const geo = new THREE.BufferGeometry().setFromPoints(arcPts)
-                const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+                const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
                 const line = new THREE.Line(geo, mat)
                 line.userData.edgeId = edge.id
                 scene.scene.add(line)
@@ -338,6 +346,36 @@ export default function Editor() {
     })
     resizeObs.observe(canvas.parentElement)
 
+    const loadOrInitMetadata = async () => {
+      const sid = shapeId != null && Number.isFinite(Number(shapeId)) ? Number(shapeId) : null
+      if (sid != null) {
+        try {
+          const row = await getShape(sid)
+          if (cancelled) return
+          const eng = enginesRef.current
+          if (!eng) return
+          const applied = applyShapePayloadToStores(row.json_data, eng.store, eng.paramStore)
+          if (!applied.ok) {
+            toast.error(applied.reason || 'Could not load shape into editor')
+            return
+          }
+          const rid = Number(row.id)
+          loadedShapeDbIdRef.current = Number.isFinite(rid) ? rid : null
+          eng.history.clear()
+          eng.annotationLayer.clear()
+          rebuildEdgeMeshes(eng.threeScene, eng.store, eng.meshMap)
+          bus.emit('geometryChanged')
+          setTimeout(() => bus.emit('zoomToFit'), 60)
+          if (eng.pointTagger) eng.pointTagger.refreshIndicators()
+        } catch (err) {
+          if (!cancelled) toast.error(`Failed to load shape: ${err?.message || err}`)
+        }
+      } else {
+        syncNextShapeMetadata()
+      }
+    }
+    loadOrInitMetadata()
+
     /**
      * Rebuild meshes for all edges after auto-healing mutated their geometry.
      */
@@ -410,6 +448,7 @@ export default function Editor() {
     }
 
     return () => {
+      cancelled = true
       unsubs.forEach(fn => fn())
       resizeObs.disconnect()
       tm.dispose()
@@ -417,7 +456,7 @@ export default function Editor() {
       coord.dispose()
       scene.dispose()
     }
-  }, [syncNextShapeMetadata])
+  }, [syncNextShapeMetadata, shapeId])
 
   // --- Mode switching ---
   const handleModeSwitch = useCallback((mode) => {
@@ -538,6 +577,7 @@ export default function Editor() {
 
     switch (action) {
       case 'new':
+        loadedShapeDbIdRef.current = null
         eng.store.clear()
         eng.paramStore.clear()
         syncNextShapeMetadata()
@@ -624,10 +664,21 @@ export default function Editor() {
 
     toast.loading('Saving to database…')
 
+    const fromLoaded = loadedShapeDbIdRef.current
+    const fromRoute = shapeId != null && Number.isFinite(Number(shapeId)) ? Number(shapeId) : null
+    const sid =
+      fromLoaded != null && Number.isFinite(Number(fromLoaded)) ? Number(fromLoaded) : fromRoute
+
     try {
-      await saveShape(payload.name, payload)
-      toast.success(`"${payload.name}" saved to database!`)
-      setSaveModal({ payload, fileName: payload.name })
+      if (sid != null) {
+        await updateShape(sid, payload.name, payload)
+        toast.success(`"${payload.name}" updated in database!`)
+        setSaveModal({ payload, fileName: payload.name, updated: true })
+      } else {
+        await saveShape(payload.name, payload)
+        toast.success(`"${payload.name}" saved to database!`)
+        setSaveModal({ payload, fileName: payload.name })
+      }
     } catch (err) {
       if ((err.message || '').toLowerCase().includes('shape number')) {
         toast.error(err.message)
@@ -637,7 +688,7 @@ export default function Editor() {
       // Still let user download even when DB is unavailable
       setSaveModal({ payload, fileName: payload.name, dbError: true })
     }
-  }, []) // eslint-disable-line
+  }, [shapeId])
 
   // Use a ref so menuAction (empty-dep useCallback) can always call the latest version
   const handleExportFlowRef = useRef(null)
@@ -652,7 +703,7 @@ export default function Editor() {
   const renderPropertyPanel = () => {
     if (measureResult) {
       return (
-        <div style={{ fontSize: 13, color: '#ccc' }}>
+        <div style={{ fontSize: 13, color: ui.textSecondary }}>
           <div style={propHeaderStyle}>Measurement</div>
           <PropRow label="Distance" value={measureResult.distance + ' mm'} />
           <PropRow label="Angle" value={measureResult.angle + '°'} />
@@ -670,7 +721,7 @@ export default function Editor() {
         const len = Math.hypot(e.end.x - e.start.x, e.end.y - e.start.y)
         const ang = Math.atan2(e.end.y - e.start.y, e.end.x - e.start.x) * 180 / Math.PI
         return (
-          <div style={{ fontSize: 13, color: '#ccc' }}>
+          <div style={{ fontSize: 13, color: ui.textSecondary }}>
             <div style={propHeaderStyle}>Line Edge</div>
             <PropRow label="Start X" value={e.start.x.toFixed(4)} />
             <PropRow label="Start Y" value={e.start.y.toFixed(4)} />
@@ -685,7 +736,7 @@ export default function Editor() {
         const sweep = Math.abs(e.endAngle - e.startAngle)
         const arcLen = e.radius * sweep
         return (
-          <div style={{ fontSize: 13, color: '#ccc' }}>
+          <div style={{ fontSize: 13, color: ui.textSecondary }}>
             <div style={propHeaderStyle}>Arc Edge</div>
             <PropRow label="Center X" value={e.center.x.toFixed(4)} />
             <PropRow label="Center Y" value={e.center.y.toFixed(4)} />
@@ -701,7 +752,7 @@ export default function Editor() {
 
     if (selectedEdges.length > 1) {
       return (
-        <div style={{ fontSize: 13, color: '#ccc' }}>
+        <div style={{ fontSize: 13, color: ui.textSecondary }}>
           <div style={propHeaderStyle}>Selection</div>
           <PropRow label="Edges" value={selectedEdges.length} />
           <PropRow label="Lines" value={selectedEdges.filter(e => e.type === 'line').length} />
@@ -711,10 +762,10 @@ export default function Editor() {
     }
 
     return (
-      <div style={{ fontSize: 13, color: '#888' }}>
+      <div style={{ fontSize: 13, color: ui.textMuted }}>
         <div style={propHeaderStyle}>Shape Info</div>
         <PropRow label="Edges" value={edgeCount} />
-        <div style={{ marginTop: 16, color: '#555', fontSize: 12, lineHeight: 1.6 }}>
+        <div style={{ marginTop: 16, color: ui.textSubtle, fontSize: 12, lineHeight: 1.6 }}>
           Click an edge with Select tool to see its properties.
         </div>
       </div>
@@ -728,7 +779,31 @@ export default function Editor() {
     <div style={rootStyle}>
       {/* Top bar: balanced layout, menus visible */}
       <header className="app-header">
-        <span className="app-header-brand">GSAP Editor</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <Link
+            to="/"
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: ui.link,
+              textDecoration: 'none',
+            }}
+          >
+            ← Home
+          </Link>
+          <Link
+            to="/custom-shapes"
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: ui.link,
+              textDecoration: 'none',
+            }}
+          >
+            Library
+          </Link>
+          <span className="app-header-brand">Shape Designer</span>
+        </div>
 
         <Toolbar
           editorMode={editorMode}
@@ -842,25 +917,25 @@ export default function Editor() {
                 {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#7fffd4' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: ui.accent }}>
                       {pointExpressionPopup.pointId}
                     </span>
-                    <span style={{ color: '#555', fontSize: 11, fontWeight: 400, marginLeft: 6 }}>
+                    <span style={{ color: ui.textMuted, fontSize: 11, fontWeight: 400, marginLeft: 6 }}>
                       drawn at ({pointExpressionPopup.x.toFixed(2)}, {pointExpressionPopup.y.toFixed(2)})
                     </span>
                   </div>
                   <button
                     onClick={() => setPointExpressionPopup(null)}
-                    style={{ background: 'none', border: 'none', color: '#555', fontSize: 16, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}
+                    style={{ background: 'none', border: 'none', color: ui.textMuted, fontSize: 16, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}
                   >✕</button>
                 </div>
 
                 {pointExpressionPopup.pointId === 'p0' ? (
                   <div>
-                    <div style={{ color: '#7fffd4', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>⚓ Shape Origin (auto-assigned)</div>
-                    <div style={{ color: '#999', fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
+                    <div style={{ color: ui.accent, fontSize: 12, fontWeight: 600, marginBottom: 4 }}>⚓ Shape Origin (auto-assigned)</div>
+                    <div style={{ color: ui.textMuted, fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
                       This is the bottom-left corner of your shape.<br />
-                      X = <code style={{ color: '#ccc' }}>trimLeft</code>, Y = <code style={{ color: '#ccc' }}>trimBottom</code>
+                      X = <code style={{ color: ui.textSecondary }}>trimLeft</code>, Y = <code style={{ color: ui.textSecondary }}>trimBottom</code>
                     </div>
                     <button style={pointPopupCancelBtnStyle} onClick={() => setPointExpressionPopup(null)}>Close</button>
                   </div>
@@ -868,14 +943,14 @@ export default function Editor() {
                   <>
                     {/* When auto-assigned, show a friendly "already set" message */}
                     {(pointExprInputX.trim() || pointExprInputY.trim()) && (
-                      <div style={{ padding: '5px 8px', background: '#0e1a12', borderRadius: 4, border: '1px solid #1e4028', marginBottom: 8, fontSize: 11, color: '#88cc99' }}>
+                      <div style={{ padding: '5px 8px', background: ui.successSoft, borderRadius: 6, border: `1px solid ${ui.success}`, marginBottom: 8, fontSize: 11, color: ui.success }}>
                         ✓ Auto-assigned — edit below or close to keep
                       </div>
                     )}
 
                     <div style={{ marginBottom: 6 }}>
-                      <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 2 }}>
-                        X (horizontal) — drawn at <b style={{ color: '#aaa' }}>{pointExpressionPopup.x.toFixed(2)}</b>
+                      <label style={{ fontSize: 11, color: ui.textMuted, display: 'block', marginBottom: 2 }}>
+                        X (horizontal) — drawn at <b style={{ color: ui.textSecondary }}>{pointExpressionPopup.x.toFixed(2)}</b>
                       </label>
                       <input
                         type="text"
@@ -887,8 +962,8 @@ export default function Editor() {
                       />
                     </div>
                     <div style={{ marginBottom: 8 }}>
-                      <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 2 }}>
-                        Y (vertical) — drawn at <b style={{ color: '#aaa' }}>{pointExpressionPopup.y.toFixed(2)}</b>
+                      <label style={{ fontSize: 11, color: ui.textMuted, display: 'block', marginBottom: 2 }}>
+                        Y (vertical) — drawn at <b style={{ color: ui.textSecondary }}>{pointExpressionPopup.y.toFixed(2)}</b>
                       </label>
                       <input
                         type="text"
@@ -902,7 +977,7 @@ export default function Editor() {
                       <button style={pointPopupSaveBtnStyle} onClick={handlePointExpressionSave}>✓ Save</button>
                       <button style={pointPopupCancelBtnStyle} onClick={() => setPointExpressionPopup(null)}>Cancel</button>
                     </div>
-                    <div style={{ marginTop: 6, color: '#444', fontSize: 10 }}>
+                    <div style={{ marginTop: 6, color: ui.textSubtle, fontSize: 10 }}>
                       Tip: use the parameter panel on the right for smart suggestions
                     </div>
                   </>
@@ -920,12 +995,12 @@ export default function Editor() {
               zIndex: 300,
             }}>
               <div style={edgePopupStyle}>
-                <div style={{ fontSize: 11, color: '#7fffd4', fontWeight: 700, marginBottom: 6 }}>
+                <div style={{ fontSize: 11, color: ui.accent, fontWeight: 700, marginBottom: 6 }}>
                   Assign Service: {edgePopup.edgeId}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                   <button
-                    style={serviceOptionStyle('#666', false)}
+                    style={serviceOptionStyle(ui.textMuted, false)}
                     onClick={() => handleEdgeServiceSelect(edgePopup.edgeId, null)}
                   >None</button>
                   {SERVICE_LABELS.map(label => {
@@ -942,7 +1017,7 @@ export default function Editor() {
                   })}
                 </div>
                 <button
-                  style={{ ...serviceOptionStyle('#666', false), width: '100%', marginTop: 4 }}
+                  style={{ ...serviceOptionStyle(ui.textMuted, false), width: '100%', marginTop: 4 }}
                   onClick={() => setEdgePopup(null)}
                 >Cancel</button>
               </div>
@@ -954,24 +1029,26 @@ export default function Editor() {
         <aside style={propertyPanelStyle}>
           {isParamMode ? (
             <div style={paramSideLayoutStyle}>
-              <div style={{ color: '#ff8844', fontWeight: 700, fontSize: 16, marginBottom: 12, letterSpacing: 0.5 }}>
+              <div style={{ color: ui.warn, fontWeight: 700, fontSize: 16, marginBottom: 12, letterSpacing: 0.5 }}>
                 PARAMETERS
               </div>
 
               {/* Detected dimensions panel — shows on first switch to param mode */}
               {showDetectedDims && detectedAnalysis && enginesRef.current && (
-                <DetectedDimensionsPanel
-                  analysis={detectedAnalysis}
-                  paramStore={enginesRef.current.paramStore}
-                  geometryStore={enginesRef.current.store}
-                  autoAssignService={autoAssignRef.current}
-                  pointTagger={enginesRef.current.pointTagger}
-                  onCreated={() => {
-                    setShowDetectedDims(false)
-                    forceRerender(n => n + 1)
-                  }}
-                  onDismiss={() => setShowDetectedDims(false)}
-                />
+                <div style={detectedDimsWrapStyle}>
+                  <DetectedDimensionsPanel
+                    analysis={detectedAnalysis}
+                    paramStore={enginesRef.current.paramStore}
+                    geometryStore={enginesRef.current.store}
+                    autoAssignService={autoAssignRef.current}
+                    pointTagger={enginesRef.current.pointTagger}
+                    onCreated={() => {
+                      setShowDetectedDims(false)
+                      forceRerender(n => n + 1)
+                    }}
+                    onDismiss={() => setShowDetectedDims(false)}
+                  />
+                </div>
               )}
 
               {enginesRef.current && (
@@ -988,7 +1065,7 @@ export default function Editor() {
             </div>
           ) : (
             <>
-              <div style={{ color: '#7fffd4', fontWeight: 700, fontSize: 16, marginBottom: 12, letterSpacing: 0.5 }}>PROPERTIES</div>
+              <div style={{ color: ui.accent, fontWeight: 700, fontSize: 16, marginBottom: 12, letterSpacing: 0.5 }}>PROPERTIES</div>
               {renderPropertyPanel()}
             </>
           )}
@@ -997,7 +1074,7 @@ export default function Editor() {
 
       {/* Command Input */}
       <div style={commandInputStyle}>
-        <span style={{ color: '#7fffd4', fontWeight: 600, marginRight: 12, fontSize: 15, userSelect: 'none' }}>CMD:</span>
+        <span style={{ color: ui.accent, fontWeight: 600, marginRight: 12, fontSize: 15, userSelect: 'none' }}>CMD:</span>
         <input
           ref={commandRef}
           type="text"
@@ -1010,7 +1087,7 @@ export default function Editor() {
           disabled={isParamMode}
         />
         {constraintStatus && (
-          <span style={{ marginLeft: 12, color: '#ff8844', fontSize: 12, fontWeight: 600 }}>{constraintStatus}</span>
+          <span style={{ marginLeft: 12, color: ui.warn, fontSize: 12, fontWeight: 600 }}>{constraintStatus}</span>
         )}
       </div>
 
@@ -1064,10 +1141,10 @@ function ToolBtn({ icon, label, shortcut, active, onClick }) {
         width: 44,
         height: 44,
         margin: '3px 0',
-        borderRadius: 8,
-        border: active ? '2px solid #7fffd4' : '2px solid transparent',
-        background: active ? 'rgba(0, 255, 212, 0.1)' : 'transparent',
-        color: active ? '#7fffd4' : '#9ca3af',
+        borderRadius: 10,
+        border: active ? `2px solid ${ui.accent}` : '2px solid transparent',
+        background: active ? ui.accentSoft : 'transparent',
+        color: active ? ui.accent : ui.textMuted,
         fontSize: 20,
         fontWeight: 700,
         display: 'flex',
@@ -1084,7 +1161,7 @@ function ToolBtn({ icon, label, shortcut, active, onClick }) {
         bottom: 2,
         right: 4,
         fontSize: 9,
-        color: '#6b7280',
+        color: ui.textSubtle,
         fontWeight: 500,
       }}>{shortcut}</span>
     </button>
@@ -1151,9 +1228,9 @@ function MenuItem({ label, shortcut, onClick, disabled }) {
 
 function PropRow({ label, value }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid #2a2d30' }}>
-      <span style={{ color: '#888' }}>{label}</span>
-      <span style={{ color: '#ddd', fontFamily: 'monospace', fontSize: 12 }}>{value}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${ui.border}` }}>
+      <span style={{ color: ui.textMuted }}>{label}</span>
+      <span style={{ color: ui.text, fontFamily: 'monospace', fontSize: 12 }}>{value}</span>
     </div>
   )
 }
@@ -1163,8 +1240,8 @@ function PropRow({ label, value }) {
 const rootStyle = {
   width: '100vw', height: '100vh',
   display: 'flex', flexDirection: 'column',
-  background: '#181a1b', fontFamily: "'Inter', system-ui, sans-serif",
-  overflow: 'hidden', color: '#e0e3e6',
+  background: ui.bgApp, fontFamily: "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif",
+  overflow: 'hidden', color: ui.text,
 }
 
 const mainAreaStyle = {
@@ -1174,8 +1251,8 @@ const mainAreaStyle = {
 
 const toolboxStyle = {
   width: 56,
-  background: '#1e2124',
-  borderRight: '1px solid #2a2d30',
+  background: ui.bgSurface,
+  borderRight: `1px solid ${ui.border}`,
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
@@ -1183,11 +1260,12 @@ const toolboxStyle = {
   zIndex: 10,
   overflowY: 'auto',
   flexShrink: 0,
+  boxShadow: '2px 0 12px rgba(15, 23, 42, 0.04)',
 }
 
 const toolGroupLabel = {
   fontSize: 11,
-  color: '#6b7280',
+  color: ui.textMuted,
   fontWeight: 700,
   letterSpacing: 0.5,
   marginTop: 10,
@@ -1196,41 +1274,54 @@ const toolGroupLabel = {
 }
 
 const propertyPanelStyle = {
-  width: 420, background: '#1e2124',
-  borderLeft: '1px solid #2a2d30',
+  width: 468, background: ui.bgSurface,
+  borderLeft: `1px solid ${ui.border}`,
   display: 'flex', flexDirection: 'column',
   padding: '12px 14px', zIndex: 10, overflow: 'hidden', flexShrink: 0,
+  minHeight: 0,
+  boxShadow: '-2px 0 16px rgba(15, 23, 42, 0.04)',
 }
 
 const paramSideLayoutStyle = {
   display: 'flex',
   flexDirection: 'column',
+  flex: 1,
   minHeight: 0,
-  height: '100%',
   overflow: 'hidden',
+}
+
+/** Scrolls tall "detected dimensions" card so it does not consume the whole sidebar. */
+const detectedDimsWrapStyle = {
+  flexShrink: 0,
+  maxHeight: 'min(320px, 38vh)',
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  marginBottom: 8,
 }
 
 const paramPanelWrapStyle = {
   flex: 1,
   minHeight: 0,
   overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
 }
 
 const propHeaderStyle = {
-  color: '#7fffd4', fontWeight: 600, fontSize: 12, marginBottom: 8,
-  paddingBottom: 4, borderBottom: '1px solid #2a2d30', letterSpacing: 0.5,
+  color: ui.accent, fontWeight: 600, fontSize: 12, marginBottom: 8,
+  paddingBottom: 4, borderBottom: `1px solid ${ui.border}`, letterSpacing: 0.5,
 }
 
 const canvasAreaStyle = {
   flex: 1, position: 'relative',
   minWidth: 0, minHeight: 0,
-  background: '#111', display: 'flex',
+  background: ui.canvasInset, display: 'flex',
 }
 
 const commandInputStyle = {
-  height: 36,
-  background: '#1a1c1e',
-  borderTop: '1px solid #2a2d30',
+  height: 40,
+  background: ui.bgPanel,
+  borderTop: `1px solid ${ui.border}`,
   display: 'flex',
   alignItems: 'center',
   padding: '0 16px',
@@ -1242,7 +1333,7 @@ const cmdInputFieldStyle = {
   flex: 1,
   background: 'transparent',
   border: 'none',
-  color: '#e5e7eb',
+  color: ui.text,
   fontSize: 15,
   outline: 'none',
   fontFamily: 'monospace',
@@ -1254,30 +1345,30 @@ const menuBackdropStyle = {
 }
 
 const edgePopupStyle = {
-  background: '#252830',
-  border: '1px solid #3a3d42',
-  borderRadius: 8,
+  background: ui.bgElevated,
+  border: `1px solid ${ui.borderStrong}`,
+  borderRadius: 10,
   padding: '10px 12px',
-  boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+  boxShadow: ui.shadowLg,
   minWidth: 160,
 }
 
 const pointExpressionPopupStyle = {
-  background: '#252830',
-  border: '1px solid #7fffd4',
-  borderRadius: 8,
+  background: ui.bgElevated,
+  border: `1px solid ${ui.accentBorder}`,
+  borderRadius: 10,
   padding: '12px 14px',
-  boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+  boxShadow: ui.shadowLg,
   minWidth: 220,
 }
 
 const pointExprInputStyle = {
   width: '100%',
-  padding: '5px 8px',
-  background: '#1a1c1e',
-  border: '1px solid #3a3d42',
-  borderRadius: 4,
-  color: '#e0e3e6',
+  padding: '6px 10px',
+  background: ui.bgInput,
+  border: `1px solid ${ui.borderStrong}`,
+  borderRadius: 6,
+  color: ui.text,
   fontSize: 12,
   fontFamily: 'monospace',
   outline: 'none',
@@ -1287,10 +1378,10 @@ const pointExprInputStyle = {
 const pointPopupSaveBtnStyle = {
   flex: 1,
   padding: '6px 12px',
-  background: '#1a3328',
-  border: '1px solid #44cc66',
-  borderRadius: 4,
-  color: '#44cc66',
+  background: ui.successSoft,
+  border: `1px solid ${ui.success}`,
+  borderRadius: 6,
+  color: ui.success,
   fontSize: 12,
   fontWeight: 600,
   cursor: 'pointer',
@@ -1299,10 +1390,10 @@ const pointPopupSaveBtnStyle = {
 const pointPopupCancelBtnStyle = {
   flex: 1,
   padding: '6px 12px',
-  background: '#2e1a1a',
-  border: '1px solid #ff4444',
-  borderRadius: 4,
-  color: '#ff4444',
+  background: ui.dangerSoft,
+  border: `1px solid ${ui.danger}`,
+  borderRadius: 6,
+  color: ui.danger,
   fontSize: 12,
   fontWeight: 600,
   cursor: 'pointer',
@@ -1310,9 +1401,9 @@ const pointPopupCancelBtnStyle = {
 
 const serviceOptionStyle = (color, isActive) => ({
   padding: '4px 10px',
-  background: isActive ? `${color}22` : 'transparent',
-  border: `1px solid ${isActive ? color : '#3a3d42'}`,
-  borderRadius: 4,
+  background: isActive ? `${color}18` : 'transparent',
+  border: `1px solid ${isActive ? color : ui.borderStrong}`,
+  borderRadius: 6,
   color: color,
   fontSize: 11,
   fontWeight: isActive ? 700 : 500,

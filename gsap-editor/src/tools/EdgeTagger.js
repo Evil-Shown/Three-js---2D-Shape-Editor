@@ -3,6 +3,7 @@
 import * as THREE from 'three'
 import { bus } from '../core/EventBus.js'
 import { SERVICE_COLORS, SERVICE_LABELS } from '../parameters/ParameterTypes.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class EdgeTagger {
   constructor(deps) {
@@ -75,7 +76,7 @@ export class EdgeTagger {
     if (closest && closest.id !== this._hoveredEdgeId) {
       this._resetHoveredEdge()
       this._hoveredEdgeId = closest.id
-      this._highlightEdge(closest.id, 0x44ccff)
+      this._highlightEdge(closest.id, CAD.edgeHover)
       const svc = this.paramStore.getEdgeService(closest.id)
       bus.emit('toolStatus', svc
         ? `EDGE TAGGER: ${closest.id} → ${svc} (click to change)`
@@ -168,7 +169,7 @@ export class EdgeTagger {
     if (svc && SERVICE_COLORS[svc]) {
       this._highlightEdge(this._hoveredEdgeId, SERVICE_COLORS[svc])
     } else {
-      this._highlightEdge(this._hoveredEdgeId, 0xffffff)
+      this._highlightEdge(this._hoveredEdgeId, CAD.edge)
     }
     this._hoveredEdgeId = null
   }
@@ -176,7 +177,7 @@ export class EdgeTagger {
   _resetAllEdgeColors() {
     const edges = this.store.getEdges()
     for (const edge of edges) {
-      this._highlightEdge(edge.id, 0xffffff)
+      this._highlightEdge(edge.id, CAD.edge)
     }
   }
 
@@ -190,7 +191,7 @@ export class EdgeTagger {
       if (svc && SERVICE_COLORS[svc]) {
         this._highlightEdge(edge.id, SERVICE_COLORS[svc])
       } else {
-        this._highlightEdge(edge.id, 0xffffff)
+        this._highlightEdge(edge.id, CAD.edge)
       }
     }
   }

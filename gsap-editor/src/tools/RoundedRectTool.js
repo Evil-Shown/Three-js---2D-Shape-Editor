@@ -8,6 +8,7 @@
 
 import * as THREE from 'three'
 import { bus } from '../core/EventBus.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class RoundedRectTool {
   constructor(deps) {
@@ -279,7 +280,7 @@ export class RoundedRectTool {
                 new THREE.Vector3(seg.start.x, seg.start.y, 0),
                 new THREE.Vector3(seg.end.x, seg.end.y, 0)
               ])
-              const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+              const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
               const line = new THREE.Line(geo, mat)
               line.userData.edgeId = id
               scene.add(line)
@@ -298,7 +299,7 @@ export class RoundedRectTool {
               )
               const pts = curve.getPoints(32)
               const geo = new THREE.BufferGeometry().setFromPoints(pts)
-              const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+              const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
               const line = new THREE.Line(geo, mat)
               line.userData.edgeId = id
               scene.add(line)

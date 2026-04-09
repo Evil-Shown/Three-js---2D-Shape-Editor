@@ -9,6 +9,7 @@
 
 import React, { useState, useMemo } from 'react'
 import { PARAM_TYPE_META } from '../parameters/ParameterTypes.js'
+import { ui } from '../theme/uiTheme.js'
 
 export default function DetectedDimensionsPanel({
   analysis,
@@ -96,10 +97,10 @@ export default function DetectedDimensionsPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 20 }}>✨</span>
           <div>
-            <div style={{ fontWeight: 700, color: '#7fffd4', fontSize: 14, letterSpacing: 0.3 }}>
+            <div style={{ fontWeight: 700, color: ui.accent, fontSize: 14, letterSpacing: 0.3 }}>
               Detected: {shapeName}
             </div>
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: ui.textMuted, marginTop: 2 }}>
               {bb.width.toFixed(1)} × {bb.height.toFixed(1)} mm · {analysis.suggestedParams.length} parameters found
             </div>
           </div>
@@ -118,7 +119,7 @@ export default function DetectedDimensionsPanel({
             <div key={param.name} style={{
               ...paramRowStyle,
               opacity: isChecked ? 1 : 0.4,
-              borderColor: isChecked ? '#2e4038' : '#2a2d30',
+              borderColor: isChecked ? ui.accentBorder : ui.border,
             }}>
               {/* Checkbox */}
               <label style={checkboxLabelStyle}>
@@ -126,12 +127,12 @@ export default function DetectedDimensionsPanel({
                   type="checkbox"
                   checked={isChecked}
                   onChange={() => toggleCheck(param.name)}
-                  style={{ accentColor: '#7fffd4' }}
+                  style={{ accentColor: ui.accent }}
                 />
               </label>
 
               {/* Type icon */}
-              <span style={{ color: meta?.color || '#888', fontSize: 14, minWidth: 18, textAlign: 'center' }}>
+              <span style={{ color: meta?.color || ui.textMuted, fontSize: 14, minWidth: 18, textAlign: 'center' }}>
                 {meta?.icon || '?'}
               </span>
 
@@ -160,9 +161,9 @@ export default function DetectedDimensionsPanel({
       {status && (
         <div style={{
           ...statusStyle,
-          background: status.type === 'success' ? '#0f2018' : '#200f0f',
-          borderColor: status.type === 'success' ? '#2a5a38' : '#5a2a2a',
-          color: status.type === 'success' ? '#66cc88' : '#cc6666',
+          background: status.type === 'success' ? '#ecfdf5' : '#fef2f2',
+          borderColor: status.type === 'success' ? '#6ee7b7' : '#fecaca',
+          color: status.type === 'success' ? '#047857' : '#b91c1c',
         }}>
           {status.msg}
         </div>
@@ -184,16 +185,16 @@ export default function DetectedDimensionsPanel({
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const panelStyle = {
-  background: '#1a1e22',
-  border: '1px solid #2e4038',
-  borderRadius: 10,
+  background: ui.bgElevated,
+  border: `1px solid ${ui.border}`,
+  borderRadius: 12,
   padding: 0,
-  marginBottom: 14,
+  marginBottom: 0,
   overflow: 'hidden',
-  boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+  boxShadow: ui.shadowLg,
   position: 'relative',
   zIndex: 2,
-  minHeight: 280,
+  minHeight: 0,
 }
 
 const headerStyle = {
@@ -201,14 +202,14 @@ const headerStyle = {
   justifyContent: 'space-between',
   alignItems: 'center',
   padding: '14px 16px',
-  background: 'linear-gradient(135deg, #152420, #1a2030)',
-  borderBottom: '1px solid #2e4038',
+  background: `linear-gradient(135deg, ${ui.accentSoft}, #e0f2fe)`,
+  borderBottom: `1px solid ${ui.border}`,
 }
 
 const dismissBtnStyle = {
   background: 'none',
   border: 'none',
-  color: '#555',
+  color: ui.textMuted,
   fontSize: 16,
   cursor: 'pointer',
   padding: '2px 6px',
@@ -226,8 +227,8 @@ const paramRowStyle = {
   alignItems: 'center',
   gap: 8,
   padding: '7px 8px',
-  borderRadius: 5,
-  border: '1px solid #2e4038',
+  borderRadius: 8,
+  border: `1px solid ${ui.border}`,
   marginBottom: 5,
   transition: 'opacity 0.15s',
 }
@@ -240,10 +241,10 @@ const checkboxLabelStyle = {
 }
 
 const nameInputStyle = {
-  background: '#252830',
-  border: '1px solid #3a3d42',
-  borderRadius: 3,
-  color: '#7fffd4',
+  background: ui.bgInput,
+  border: `1px solid ${ui.borderStrong}`,
+  borderRadius: 6,
+  color: ui.accent,
   fontSize: 13,
   fontFamily: 'monospace',
   fontWeight: 700,
@@ -254,7 +255,7 @@ const nameInputStyle = {
 }
 
 const valueStyle = {
-  color: '#aaa',
+  color: ui.textSubtle,
   fontSize: 12,
   fontFamily: 'monospace',
   minWidth: 92,
@@ -262,7 +263,7 @@ const valueStyle = {
 }
 
 const descStyle = {
-  color: '#666',
+  color: ui.textMuted,
   fontSize: 11,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
@@ -273,14 +274,14 @@ const descStyle = {
 const statusStyle = {
   margin: '0 10px 8px',
   padding: '6px 10px',
-  borderRadius: 5,
+  borderRadius: 6,
   border: '1px solid',
   fontSize: 11,
 }
 
 const actionBarStyle = {
   padding: '8px 10px 12px',
-  borderTop: '1px solid #252830',
+  borderTop: `1px solid ${ui.border}`,
   display: 'flex',
   flexDirection: 'column',
   gap: 6,
@@ -289,10 +290,10 @@ const actionBarStyle = {
 const createBtnStyle = {
   width: '100%',
   padding: '9px 12px',
-  background: 'linear-gradient(135deg, #1a3828, #1e3a40)',
-  border: '1px solid #7fffd4',
-  borderRadius: 6,
-  color: '#7fffd4',
+  background: `linear-gradient(135deg, ${ui.accentSoft}, #e0f2fe)`,
+  border: `1px solid ${ui.accentBorder}`,
+  borderRadius: 8,
+  color: ui.accent,
   fontSize: 13,
   fontWeight: 700,
   cursor: 'pointer',
@@ -303,9 +304,9 @@ const skipBtnStyle = {
   width: '100%',
   padding: '6px 12px',
   background: 'transparent',
-  border: '1px solid #3a3d42',
-  borderRadius: 6,
-  color: '#888',
+  border: `1px solid ${ui.borderStrong}`,
+  borderRadius: 8,
+  color: ui.textMuted,
   fontSize: 11,
   cursor: 'pointer',
 }

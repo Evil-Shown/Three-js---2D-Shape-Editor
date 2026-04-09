@@ -3,6 +3,7 @@
 
 import * as THREE from 'three'
 import { bus } from '../core/EventBus.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class OffsetTool {
   constructor(deps) {
@@ -74,7 +75,7 @@ export class OffsetTool {
             new THREE.Vector3(newStart.x, newStart.y, 0),
             new THREE.Vector3(newEnd.x, newEnd.y, 0)
           ])
-          const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+          const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
           const line = new THREE.Line(geo, mat)
           line.userData.edgeId = this._id
           scene.add(line); meshMap.set(this._id, line)

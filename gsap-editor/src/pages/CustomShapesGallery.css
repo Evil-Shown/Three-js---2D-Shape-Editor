@@ -1,0 +1,210 @@
+.sd-gallery {
+  min-height: 100%;
+  overflow: auto;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #0f172a;
+  display: flex;
+  flex-direction: column;
+}
+
+.sd-gallery__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.92);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+}
+
+.sd-gallery__home {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0d9488;
+  text-decoration: none;
+  margin-bottom: 6px;
+}
+
+.sd-gallery__home:hover {
+  text-decoration: underline;
+  color: #0f766e;
+}
+
+.sd-gallery__title {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.sd-gallery__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.sd-gallery__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, opacity 0.15s, filter 0.15s;
+}
+
+.sd-gallery__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sd-gallery__btn--ghost {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.sd-gallery__btn--ghost:hover:not(:disabled) {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.sd-gallery__btn--accent {
+  background: linear-gradient(135deg, #0d9488 0%, #0891b2 100%);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35);
+}
+
+.sd-gallery__btn--accent:hover {
+  filter: brightness(1.05);
+}
+
+.sd-gallery__main {
+  flex: 1;
+  padding: 28px 24px 56px;
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.sd-gallery__status,
+.sd-gallery__empty {
+  text-align: center;
+  padding: 48px 16px;
+  color: #64748b;
+}
+
+.sd-gallery__error {
+  text-align: center;
+  padding: 40px 16px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  max-width: 480px;
+  margin: 24px auto;
+}
+
+.sd-gallery__error-hint {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #64748b;
+}
+
+.sd-gallery__grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+}
+
+.sd-tile {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+  cursor: pointer;
+  padding: 0;
+  color: inherit;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+
+.sd-tile:hover {
+  border-color: rgba(13, 148, 136, 0.45);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.1);
+}
+
+.sd-tile__canvas {
+  aspect-ratio: 320 / 220;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 11px, rgba(15, 23, 42, 0.035) 11px, rgba(15, 23, 42, 0.035) 12px),
+    repeating-linear-gradient(90deg, transparent, transparent 11px, rgba(15, 23, 42, 0.035) 11px, rgba(15, 23, 42, 0.035) 12px),
+    linear-gradient(180deg, #e8edf4 0%, #dfe6ef 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0d9488;
+}
+
+.sd-tile__svg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.sd-tile__svg svg {
+  max-width: 92%;
+  max-height: 92%;
+}
+
+.sd-tile__placeholder {
+  font-size: 13px;
+  color: #94a3b8;
+  padding: 12px;
+}
+
+.sd-tile__meta {
+  padding: 14px 16px 16px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sd-tile__name {
+  font-weight: 600;
+  font-size: 15px;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sd-tile__num {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.sd-tile__cta {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0d9488;
+}

@@ -14,6 +14,7 @@ import { ExpressionBuilder } from '../parameters/ExpressionBuilder.js'
 import { ExpressionValidator } from '../parameters/ExpressionValidator.js'
 import { AutoAssignService } from '../parameters/AutoAssignService.js'
 import { bus } from '../core/EventBus.js'
+import { ui } from '../theme/uiTheme.js'
 
 export default function ParameterPanel({
   paramStore,
@@ -26,6 +27,7 @@ export default function ParameterPanel({
   const [addingParam, setAddingParam] = useState(false)
   const [newParam, setNewParam] = useState({ name: '', type: 'LINEAR', defaultValue: 0, description: '' })
   const [validationResult, setValidationResult] = useState(null)
+  const [showValidationTips, setShowValidationTips] = useState(true)
   const [activeSection, setActiveSection] = useState('params')
   const [focusedParamName, setFocusedParamName] = useState(null)
 
@@ -119,6 +121,7 @@ export default function ParameterPanel({
   const runValidation = () => {
     const result = validatorRef.current.validate(paramStore, geometryStore)
     setValidationResult(result)
+    setShowValidationTips(true)
     return result
   }
 
@@ -171,14 +174,14 @@ export default function ParameterPanel({
 
             {params.length === 0 && !addingParam && (
               <div style={tipsBoxStyle}>
-                <div style={{ fontWeight: 700, color: '#7fffd4', marginBottom: 6 }}>Getting started</div>
+                <div style={{ fontWeight: 700, color: ui.accent, marginBottom: 6 }}>Getting started</div>
                 <div>Add parameters to describe your shape's dimensions:</div>
-                <div style={{ marginTop: 4, color: '#aaa' }}>
+                <div style={{ marginTop: 4, color: ui.textMuted }}>
                   • <b>L</b> — overall width (LINEAR)<br />
                   • <b>H</b> — overall height (LINEAR)<br />
                   • <b>R1</b> — corner radius (RADIUS)
                 </div>
-                <div style={{ marginTop: 6, color: '#888' }}>
+                <div style={{ marginTop: 6, color: ui.textSubtle }}>
                   Then go to the <b>Points</b> tab and click <b>Auto-Assign All</b>.
                 </div>
               </div>
@@ -208,7 +211,7 @@ export default function ParameterPanel({
 
             {addingParam && (
               <div style={addFormStyle}>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>
+                <div style={{ fontSize: 11, color: ui.textMuted, marginBottom: 6 }}>
                   Name must be a valid Java identifier (e.g. L, H, R1, widthLeft)
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -283,23 +286,23 @@ export default function ParameterPanel({
             <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 8 }}>
               {edges.map((edge) => {
                 const svc = edgeServices[edge.id] || null
-                const svcColor = svc ? SERVICE_COLORS[svc] : '#555'
+                const svcColor = svc ? SERVICE_COLORS[svc] : ui.textMuted
                 const len = edge.type === 'line'
                   ? Math.hypot(edge.end.x - edge.start.x, edge.end.y - edge.start.y)
                   : edge.radius * Math.abs(edge.endAngle - edge.startAngle)
 
                 return (
                   <div key={edge.id} style={edgeRowStyle}>
-                    <span style={{ color: svcColor, fontWeight: 700, fontSize: 12, minWidth: 24 }}>
+                    <span style={{ color: svcColor, fontWeight: 700, fontSize: 12, minWidth: 20 }}>
                       {svc || '—'}
                     </span>
-                    <span style={{ color: '#888', fontSize: 11, minWidth: 56, fontFamily: 'monospace' }}>
+                    <span style={{ color: ui.textMuted, fontSize: 11, minWidth: 44, fontFamily: 'monospace' }}>
                       {edge.id}
                     </span>
                     <span style={{ fontSize: 10, color: edge.type === 'arc' ? '#ff88cc' : '#88aaff' }}>
                       {edge.type === 'arc' ? '◠ arc' : '╱ line'}
                     </span>
-                    <span style={{ color: '#555', fontSize: 10, marginLeft: 'auto' }}>
+                    <span style={{ color: ui.textSubtle, fontSize: 10, marginLeft: 'auto' }}>
                       {len.toFixed(1)}mm
                     </span>
                     <select
@@ -372,40 +375,69 @@ export default function ParameterPanel({
 
       {/* ════════════════════════ BOTTOM BAR ════════════════════════════════════ */}
       <div style={bottomBarStyle}>
-        {validationResult && (
+        {validationResult && showValidationTips && (
           <div style={{
-            padding: '7px 8px', marginBottom: 6, borderRadius: 4,
+            padding: '7px 8px', marginBottom: 6, borderRadius: 8,
             background: validationResult.isValid
-              ? (validationResult.warnings.length > 0 ? '#1a1a08' : '#0f1e10')
-              : '#1e0f0f',
+              ? (validationResult.warnings.length > 0 ? '#fffbeb' : '#ecfdf5')
+              : '#fef2f2',
             border: `1px solid ${validationResult.isValid
-              ? (validationResult.warnings.length > 0 ? '#aaaa33' : '#44cc66')
-              : '#cc4444'}`,
-            fontSize: 11, maxHeight: 160, overflowY: 'auto',
+              ? (validationResult.warnings.length > 0 ? '#fbbf24' : '#34d399')
+              : '#f87171'}`,
+            fontSize: 11,
+            maxHeight: 'min(140px, 24vh)',
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
           }}>
-            <div style={{
-              fontWeight: 700, marginBottom: 4,
-              color: validationResult.isValid
-                ? (validationResult.warnings.length > 0 ? '#cccc44' : '#44cc66')
-                : '#ff5555',
-            }}>
-              {validationResult.isValid
-                ? (validationResult.warnings.length > 0
-                  ? `✓ Ready to generate  ·  ${validationResult.warnings.length} tip${validationResult.warnings.length > 1 ? 's' : ''}`
-                  : '✓ Perfect — ready to generate')
-                : `✗ ${validationResult.errors.length} error${validationResult.errors.length > 1 ? 's' : ''} — fix to continue`}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <div style={{
+                fontWeight: 700,
+                color: validationResult.isValid
+                  ? (validationResult.warnings.length > 0 ? '#b45309' : '#059669')
+                  : '#dc2626',
+              }}>
+                {validationResult.isValid
+                  ? (validationResult.warnings.length > 0
+                    ? `✓ Ready to generate  ·  ${validationResult.warnings.length} tip${validationResult.warnings.length > 1 ? 's' : ''}`
+                    : '✓ Perfect — ready to generate')
+                  : `✗ ${validationResult.errors.length} error${validationResult.errors.length > 1 ? 's' : ''} — fix to continue`}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowValidationTips(false)}
+                title="Hide tips"
+                style={{
+                  marginLeft: 'auto',
+                  width: 18,
+                  height: 18,
+                  borderRadius: 6,
+                  border: `1px solid ${ui.borderStrong}`,
+                  background: ui.bgSurface,
+                  color: ui.textMuted,
+                  fontSize: 12,
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                ✕
+              </button>
             </div>
             {validationResult.errors.map((e, i) => (
-              <div key={i} style={{ color: '#ff9090', fontSize: 10, marginBottom: 2 }}>
+              <div key={i} style={{ color: '#dc2626', fontSize: 10, marginBottom: 2 }}>
                 ✗ {e.message}
               </div>
             ))}
             {validationResult.warnings.map((w, i) => (
-              <div key={i} style={{ color: '#aaaa44', fontSize: 10, marginBottom: 2 }}>
+              <div key={i} style={{ color: '#b45309', fontSize: 10, marginBottom: 2 }}>
                 ⚠ {w.message}
               </div>
             ))}
-            <div style={{ color: '#555', fontSize: 10, marginTop: 4, borderTop: '1px solid #333', paddingTop: 4 }}>
+            <div style={{ color: ui.textMuted, fontSize: 10, marginTop: 4, borderTop: `1px solid ${ui.border}`, paddingTop: 4 }}>
               {validationResult.summary.assignedPoints}/{validationResult.summary.totalPoints} pts assigned ·
               {' '}{validationResult.summary.totalParameters} params ·
               {' '}{validationResult.summary.assignedServices}/{validationResult.summary.totalEdges} edges tagged
@@ -435,14 +467,14 @@ export default function ParameterPanel({
                 ? (validationResult.errors.length === 0 ? 'pointer' : 'not-allowed')
                 : 'pointer',
               background: validationResult?.warnings?.length > 0 && validationResult?.isValid
-                ? '#2a2a10'
-                : '#1a3328',
-              borderColor: validationResult?.warnings?.length > 0 && validationResult?.isValid
-                ? '#cccc44'
-                : '#7fffd4',
+                ? '#fffbeb'
+                : ui.accentSoft,
+              border: validationResult?.warnings?.length > 0 && validationResult?.isValid
+                ? '1px solid #fbbf24'
+                : `1px solid ${ui.accentBorder}`,
               color: validationResult?.warnings?.length > 0 && validationResult?.isValid
-                ? '#cccc44'
-                : '#7fffd4',
+                ? '#b45309'
+                : ui.accent,
             }}
             onClick={handleGenerate}
             disabled={validationResult ? validationResult.errors.length > 0 : false}
@@ -460,116 +492,132 @@ export default function ParameterPanel({
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const panelStyle = { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }
+const panelStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  flex: 1,
+  minHeight: 0,
+  overflow: 'hidden',
+}
 
-const tabBarStyle = { display: 'flex', borderBottom: '1px solid #2a2d30', gap: 0, flexShrink: 0 }
+const tabBarStyle = { display: 'flex', borderBottom: `1px solid ${ui.border}`, gap: 0, flexShrink: 0 }
 
 const tabBtnStyle = {
-  flex: 1, padding: '7px 2px',
+  flex: 1, padding: '8px 3px',
   background: 'transparent', border: 'none',
   borderBottom: '2px solid transparent',
-  color: '#666', fontSize: 11, fontWeight: 600,
+  color: ui.textMuted, fontSize: 12, fontWeight: 600,
   cursor: 'pointer', whiteSpace: 'nowrap',
 }
-const tabBtnActiveStyle = { color: '#7fffd4', borderBottomColor: '#7fffd4' }
+const tabBtnActiveStyle = { color: ui.accent, borderBottomColor: ui.accent }
 
-const sectionBodyStyle = { flex: 1, overflowY: 'auto', paddingBottom: 8 }
+const sectionBodyStyle = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  paddingBottom: 8,
+  WebkitOverflowScrolling: 'touch',
+}
 
 const sectionHeaderStyle = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  color: '#7fffd4', fontWeight: 600, fontSize: 12,
+  color: ui.accent, fontWeight: 600, fontSize: 12,
   marginBottom: 8, paddingBottom: 4,
-  borderBottom: '1px solid #2a2d30',
+  borderBottom: `1px solid ${ui.border}`,
 }
 
 const addBtnStyle = {
   padding: '3px 10px',
-  background: '#1a3328', border: '1px solid #7fffd4',
-  borderRadius: 4, color: '#7fffd4',
+  background: ui.accentSoft, border: `1px solid ${ui.accentBorder}`,
+  borderRadius: 6, color: ui.accent,
   fontSize: 11, fontWeight: 600, cursor: 'pointer',
 }
 
 const autoAssignBtnStyle = {
   flex: 2, padding: '7px 10px',
-  background: 'linear-gradient(135deg, #1a3328, #1e2e3a)',
-  border: '1px solid #7fffd4',
-  borderRadius: 5, color: '#7fffd4',
+  background: `linear-gradient(135deg, ${ui.accentSoft}, #e0f2fe)`,
+  border: `1px solid ${ui.accentBorder}`,
+  borderRadius: 8, color: ui.accent,
   fontSize: 12, fontWeight: 700, cursor: 'pointer',
   letterSpacing: 0.3,
 }
 
 const tipsBoxStyle = {
-  padding: '10px 12px', borderRadius: 6,
-  background: '#1a1c1e', border: '1px dashed #2a2d30',
-  color: '#888', fontSize: 11, lineHeight: 1.7,
+  padding: '10px 12px', borderRadius: 8,
+  background: ui.bgPanel, border: `1px dashed ${ui.borderStrong}`,
+  color: ui.textMuted, fontSize: 11, lineHeight: 1.7,
   marginBottom: 8,
 }
 
 const addFormStyle = {
-  padding: 10, background: '#252830',
-  borderRadius: 6, border: '1px solid #3a3d42',
+  padding: 10, background: ui.bgPanel,
+  borderRadius: 8, border: `1px solid ${ui.border}`,
   marginBottom: 4,
 }
 
 const addInputStyle = {
-  padding: '4px 6px', background: '#1a1c1e',
-  border: '1px solid #3a3d42', borderRadius: 3,
-  color: '#e0e3e6', fontSize: 12, outline: 'none',
+  padding: '4px 6px', background: ui.bgInput,
+  border: `1px solid ${ui.borderStrong}`, borderRadius: 6,
+  color: ui.text, fontSize: 12, outline: 'none',
 }
 
 const confirmBtnStyle = {
   padding: '4px 14px',
-  background: '#1a3328', border: '1px solid #44cc66',
-  borderRadius: 4, color: '#44cc66',
+  background: ui.successSoft, border: `1px solid ${ui.success}`,
+  borderRadius: 6, color: ui.success,
   fontSize: 11, fontWeight: 600, cursor: 'pointer',
 }
 
 const cancelBtnStyle = {
   padding: '4px 14px',
-  background: '#2e1a1a', border: '1px solid #ff4444',
-  borderRadius: 4, color: '#ff4444',
+  background: ui.dangerSoft, border: `1px solid ${ui.danger}`,
+  borderRadius: 6, color: ui.danger,
   fontSize: 11, fontWeight: 600, cursor: 'pointer',
 }
 
 const edgeRowStyle = {
   display: 'flex', alignItems: 'center',
-  padding: '5px 8px', borderRadius: 4,
-  border: '1px solid #2a2d30', marginBottom: 2, gap: 6,
+  flexWrap: 'wrap',
+  padding: '5px 8px', borderRadius: 6,
+  border: `1px solid ${ui.border}`, marginBottom: 4, gap: 6,
 }
 
 const serviceSelectStyle = {
-  padding: '2px 4px', background: '#252830',
-  border: '1px solid #3a3d42', borderRadius: 3,
-  color: '#e0e3e6', fontSize: 11, outline: 'none',
+  padding: '2px 4px', background: ui.bgInput,
+  border: `1px solid ${ui.borderStrong}`, borderRadius: 6,
+  color: ui.text, fontSize: 11, outline: 'none', minWidth: 96, marginLeft: 'auto',
 }
 
 const labelStyle = {
-  fontSize: 11, color: '#666', fontWeight: 600,
+  fontSize: 11, color: ui.textMuted, fontWeight: 600,
   display: 'block', marginBottom: 2,
 }
 
 const metaInputStyle = {
   width: '100%', padding: '5px 8px',
-  background: '#252830', border: '1px solid #3a3d42',
-  borderRadius: 4, color: '#e0e3e6', fontSize: 12,
+  background: ui.bgInput, border: `1px solid ${ui.borderStrong}`,
+  borderRadius: 6, color: ui.text, fontSize: 12,
   fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box',
 }
 
 const bottomBarStyle = {
-  borderTop: '1px solid #2a2d30',
-  padding: '8px 0 0 0', flexShrink: 0,
+  borderTop: `1px solid ${ui.border}`,
+  padding: '6px 0 0 0',
+  flexShrink: 0,
+  background: ui.bgSurface,
 }
 
 const validateBtnStyle = {
   flex: 1, padding: '7px 12px',
-  background: '#1e2124', border: '1px solid #3a3d42',
-  borderRadius: 4, color: '#aaa', fontSize: 12,
+  background: ui.bgPanel, border: `1px solid ${ui.borderStrong}`,
+  borderRadius: 8, color: ui.textSecondary, fontSize: 12,
   fontWeight: 600, cursor: 'pointer',
 }
 
 const generateBtnStyle = {
   flex: 1, padding: '7px 12px',
-  background: '#1a3328', border: '1px solid #7fffd4',
-  borderRadius: 4, color: '#7fffd4', fontSize: 12,
+  background: ui.accentSoft, border: `1px solid ${ui.accentBorder}`,
+  borderRadius: 8, color: ui.accent, fontSize: 12,
   fontWeight: 700, cursor: 'pointer',
 }

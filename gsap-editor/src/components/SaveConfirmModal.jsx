@@ -3,6 +3,7 @@
 
 import React from 'react'
 import ReactDOM from 'react-dom'
+import { ui } from '../theme/uiTheme.js'
 
 export default function SaveConfirmModal({ shapeName, onDownload, onClose }) {
   if (!shapeName && shapeName !== '') return null
@@ -19,26 +20,22 @@ export default function SaveConfirmModal({ shapeName, onDownload, onClose }) {
         }
       `}</style>
       <div style={modalStyle}>
-        {/* Icon */}
         <div style={{ fontSize: 40, marginBottom: 12, textAlign: 'center' }}>💾</div>
 
-        {/* Title */}
         <h2 style={titleStyle}>Saved to Database</h2>
 
-        {/* Message */}
         <p style={msgStyle}>
-          <span style={{ color: '#7fffd4', fontWeight: 600 }}>"{shapeName}"</span>{' '}
+          <span style={{ color: ui.accent, fontWeight: 600 }}>&quot;{shapeName}&quot;</span>{' '}
           has been saved to the database successfully.
           <br />
           Do you also want to download the JSON file?
         </p>
 
-        {/* Buttons */}
         <div style={btnRowStyle}>
-          <button style={btnSecondaryStyle} onClick={onClose}>
+          <button type="button" style={btnSecondaryStyle} onClick={onClose}>
             No, thanks
           </button>
-          <button style={btnPrimaryStyle} onClick={onDownload}>
+          <button type="button" style={btnPrimaryStyle} onClick={onDownload}>
             ⬇ Download JSON
           </button>
         </div>
@@ -48,26 +45,25 @@ export default function SaveConfirmModal({ shapeName, onDownload, onClose }) {
   )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const backdropStyle = {
   position       : 'fixed',
   inset          : 0,
-  background     : 'rgba(0, 0, 0, 0.65)',
+  background     : 'rgba(15, 23, 42, 0.35)',
   display        : 'flex',
   alignItems     : 'center',
   justifyContent : 'center',
   zIndex         : 99998,
-  backdropFilter : 'blur(3px)',
+  backdropFilter : 'blur(6px)',
 }
 
 const modalStyle = {
-  background   : '#1e2228',
-  border       : '1px solid #3a4149',
-  borderRadius : 12,
+  background   : ui.bgElevated,
+  border       : `1px solid ${ui.border}`,
+  borderRadius : 16,
   padding      : '32px 36px',
   maxWidth     : 420,
   width        : '90%',
-  boxShadow    : '0 20px 60px rgba(0,0,0,0.6)',
+  boxShadow    : ui.shadowLg,
   animation    : 'modal-in 0.2s ease',
 }
 
@@ -75,14 +71,14 @@ const titleStyle = {
   margin         : '0 0 12px',
   fontSize       : 20,
   fontWeight     : 700,
-  color          : '#e5e7eb',
+  color          : ui.text,
   textAlign      : 'center',
 }
 
 const msgStyle = {
   margin      : '0 0 24px',
   fontSize    : 14,
-  color       : '#9ca3af',
+  color       : ui.textMuted,
   lineHeight  : 1.6,
   textAlign   : 'center',
 }
@@ -95,23 +91,23 @@ const btnRowStyle = {
 
 const btnBase = {
   padding      : '10px 22px',
-  borderRadius : 7,
+  borderRadius : 10,
   fontSize     : 14,
   fontWeight   : 600,
   cursor       : 'pointer',
-  border       : 'none',
-  transition   : 'opacity 0.15s',
+  transition   : 'opacity 0.15s, filter 0.15s',
 }
 
 const btnPrimaryStyle = {
   ...btnBase,
-  background : 'linear-gradient(135deg, #00ffd4, #0099aa)',
-  color      : '#0d1117',
+  background : `linear-gradient(135deg, ${ui.accent}, #0891b2)`,
+  color      : '#ffffff',
+  border     : 'none',
 }
 
 const btnSecondaryStyle = {
   ...btnBase,
-  background : 'transparent',
-  border     : '1px solid #4b5563',
-  color      : '#9ca3af',
+  background : ui.bgPanel,
+  border     : `1px solid ${ui.borderStrong}`,
+  color      : ui.textSecondary,
 }

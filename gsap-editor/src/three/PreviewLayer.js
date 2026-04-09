@@ -5,6 +5,7 @@
 
 import * as THREE from 'three'
 import { SNAP } from '../snap/SnapEngine.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class PreviewLayer {
   constructor(scene, coordEngine) {
@@ -27,7 +28,7 @@ export class PreviewLayer {
     this._objects = []
   }
 
-  showLine(start, end, color = 0x00ff88, opacity = 0.7) {
+  showLine(start, end, color = CAD.preview, opacity = 0.75) {
     const geo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(start.x, start.y, 1),
       new THREE.Vector3(end.x, end.y, 1)
@@ -39,7 +40,7 @@ export class PreviewLayer {
     return line
   }
 
-  showArc(center, radius, startAngle, endAngle, clockwise, color = 0x00ff88, opacity = 0.7) {
+  showArc(center, radius, startAngle, endAngle, clockwise, color = CAD.preview, opacity = 0.75) {
     if (radius < 0.01) return
     const curve = new THREE.EllipseCurve(
       center.x, center.y, radius, radius,
@@ -79,12 +80,12 @@ export class PreviewLayer {
     this.showLine(
       { x: bounds.left, y: world.y },
       { x: bounds.right, y: world.y },
-      0x335566, 0.25
+      0x64748b, 0.22
     )
     this.showLine(
       { x: world.x, y: bounds.bottom },
       { x: world.x, y: bounds.top },
-      0x335566, 0.25
+      0x64748b, 0.22
     )
   }
 

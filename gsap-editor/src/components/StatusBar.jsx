@@ -1,4 +1,5 @@
 import React from 'react'
+import { ui } from '../theme/uiTheme.js'
 
 export default function StatusBar({
   coordStatus,
@@ -18,11 +19,11 @@ export default function StatusBar({
       <span style={itemStyle}>{coordStatus}</span>
       <span style={sep}>|</span>
       <span style={itemStyle}>
-        Snap: <span style={{ color: snapStatus !== 'None' ? '#7fffd4' : '#666' }}>{snapStatus}</span>
+        Snap: <span style={{ color: snapStatus !== 'None' ? ui.accent : ui.textSubtle }}>{snapStatus}</span>
       </span>
       <span style={sep}>|</span>
       <span style={itemStyle}>
-        Tool: <span style={{ color: '#88aaff' }}>{activeTool}</span>
+        Tool: <span style={{ color: ui.blue }}>{activeTool}</span>
       </span>
       <span style={sep}>|</span>
       <span style={itemStyle}>Edges: {edgeCount}</span>
@@ -31,11 +32,11 @@ export default function StatusBar({
         <>
           <span style={sep}>|</span>
           <span style={itemStyle}>
-            Params: <span style={{ color: '#ff8844' }}>{parameterCount}</span>
+            Params: <span style={{ color: ui.warn }}>{parameterCount}</span>
           </span>
           <span style={sep}>|</span>
           <span style={itemStyle}>
-            Points: <span style={{ color: pointsAssigned === totalPoints && totalPoints > 0 ? '#44cc66' : '#cccc44' }}>
+            Points: <span style={{ color: pointsAssigned === totalPoints && totalPoints > 0 ? ui.success : '#ca8a04' }}>
               {pointsAssigned}/{totalPoints}
             </span>
           </span>
@@ -45,30 +46,31 @@ export default function StatusBar({
       <span style={{ flex: 1 }} />
 
       {isParamMode && (
-        <span style={{ color: '#ff8844', fontSize: 13, fontWeight: 600, marginRight: 12 }}>
+        <span style={{ color: ui.warn, fontSize: 13, fontWeight: 600, marginRight: 12 }}>
           PARAMETER MODE
         </span>
       )}
 
-      <span style={{ color: '#7fffd4', fontSize: 14 }}>{toolStatus}</span>
+      <span style={{ color: ui.accent, fontSize: 14 }}>{toolStatus}</span>
     </footer>
   )
 }
 
 const barStyle = {
-  height: 30,
-  background: '#1a1c1e',
-  color: '#9ca3af',
-  fontSize: 14,
+  height: 34,
+  background: ui.bgSurface,
+  color: ui.textMuted,
+  fontSize: 13,
   display: 'flex',
   alignItems: 'center',
   padding: '0 16px',
-  borderTop: '1px solid #2a2d30',
+  borderTop: `1px solid ${ui.border}`,
   zIndex: 20,
   userSelect: 'none',
   flexShrink: 0,
-  fontFamily: 'monospace',
+  fontFamily: 'ui-monospace, monospace',
+  boxShadow: '0 -1px 0 rgba(255,255,255,0.8) inset',
 }
 
 const itemStyle = { marginRight: 0 }
-const sep = { margin: '0 10px', color: '#333' }
+const sep = { margin: '0 10px', color: ui.borderStrong }

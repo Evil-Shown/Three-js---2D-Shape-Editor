@@ -110,6 +110,64 @@ export class GeometryStore {
     this._version++
   }
 
+  /**
+   * Replace all edges from an export payload (preserves ids when present).
+   * Updates internal id counter so new edges do not collide.
+   */
+  importEdgesFromPayload(edgeList) {
+    if (!Array.isArray(edgeList)) return
+    this.clear()
+    for (const raw of edgeList) {
+      const normalized = this._normalizeImportedEdge(raw)
+      if (!normalized) continue
+      const id = raw && raw.id != null && String(raw.id).trim() !== '' ? String(raw.id) : null
+      if (id) {
+        this.restoreEdge({ ...normalized, id })
+      } else {
+        this.addEdge(normalized)
+      }
+    }
+    this._bumpCounterFromExistingIds()
+  }
+
+  _normalizeImportedEdge(raw) {
+    if (!raw || !raw.type) return null
+    const t = String(raw.type).toLowerCase()
+    if (t === 'line') {
+      const start = raw.start
+      const end = raw.end
+      if (!start || !end) return null
+      return {
+        type: 'line',
+        start: { x: Number(start.x), y: Number(start.y) },
+        end: { x: Number(end.x), y: Number(end.y) },
+      }
+    }
+    if (t === 'arc') {
+      const c = raw.center
+      if (!c || raw.radius == null) return null
+      if (raw.startAngle === undefined || raw.endAngle === undefined) return null
+      return {
+        type: 'arc',
+        center: { x: Number(c.x), y: Number(c.y) },
+        radius: Number(raw.radius),
+        startAngle: Number(raw.startAngle),
+        endAngle: Number(raw.endAngle),
+        clockwise: Boolean(raw.clockwise),
+      }
+    }
+    return null
+  }
+
+  _bumpCounterFromExistingIds() {
+    let maxN = 0
+    for (const edge of this._edges) {
+      const m = String(edge.id || '').match(/^edge_(\d+)$/)
+      if (m) maxN = Math.max(maxN, parseInt(m[1], 10))
+    }
+    if (maxN > this._counter) this._counter = maxN
+  }
+
   _deepCopy(edge) {
     const copy = { ...edge }
     if (copy.start) copy.start = { ...copy.start }

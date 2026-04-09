@@ -4,6 +4,7 @@
 
 import * as THREE from 'three'
 import { bus } from '../core/EventBus.js'
+import { CAD } from '../theme/cadTheme.js'
 
 export class ArcTool {
   constructor(deps) {
@@ -173,7 +174,7 @@ export class ArcTool {
           const curve = new THREE.EllipseCurve(c.x, c.y, radius, radius, startAngle, endAngle, clockwise, 0)
           const pts = curve.getPoints(64)
           const geo = new THREE.BufferGeometry().setFromPoints(pts)
-          const mat = new THREE.LineBasicMaterial({ color: 0xffffff })
+          const mat = new THREE.LineBasicMaterial({ color: CAD.edge })
           const line = new THREE.Line(geo, mat)
           line.userData.edgeId = this._id
           scene.add(line)

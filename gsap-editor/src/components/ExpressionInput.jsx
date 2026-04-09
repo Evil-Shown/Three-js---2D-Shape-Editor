@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { ui } from '../theme/uiTheme.js'
 
 export default function ExpressionInput({
   value,
@@ -28,20 +29,20 @@ export default function ExpressionInput({
   }
 
   const borderColor = validationState === true
-    ? '#44cc66'
+    ? ui.success
     : validationState === false
-      ? '#ff4444'
+      ? ui.danger
       : status === 'verified'
-        ? '#44cc66'
+        ? ui.success
         : status === 'error'
-          ? '#ff4444'
-          : '#3a3d42'
+          ? ui.danger
+          : ui.borderStrong
 
   return (
     <div style={{ marginBottom: 4 }}>
       {label && (
         <label style={{
-          fontSize: 11, color: '#888', fontWeight: 600,
+          fontSize: 11, color: ui.textMuted, fontWeight: 600,
           display: 'block', marginBottom: 2,
         }}>{label}</label>
       )}
@@ -55,10 +56,10 @@ export default function ExpressionInput({
         style={{
           width: '100%',
           padding: '5px 8px',
-          background: disabled ? '#1a1c1e' : '#252830',
+          background: disabled ? ui.bgMuted : ui.bgInput,
           border: `1px solid ${borderColor}`,
-          borderRadius: 4,
-          color: disabled ? '#666' : '#e0e3e6',
+          borderRadius: 6,
+          color: disabled ? ui.textSubtle : ui.text,
           fontSize: 12,
           fontFamily: 'monospace',
           outline: 'none',
@@ -66,7 +67,7 @@ export default function ExpressionInput({
           boxSizing: 'border-box',
         }}
         onFocus={(e) => {
-          e.target.style.borderColor = '#7fffd4'
+          e.target.style.borderColor = ui.accentBorder
         }}
         onBlur={(e) => {
           e.target.style.borderColor = borderColor

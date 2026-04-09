@@ -39,7 +39,7 @@ const SNAP_COLORS = {
   [SNAP.PERPENDICULAR]: 0xff00ff,  // magenta
   [SNAP.TANGENT]:       0xff8800,  // orange
   [SNAP.ANGLE]:         0x4488ff,  // blue
-  [SNAP.GRID]:          0x666666,  // grey
+  [SNAP.GRID]:          0x64748b,  // slate
 }
 
 const EPS = 1e-8

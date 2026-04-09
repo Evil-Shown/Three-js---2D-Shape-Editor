@@ -23,7 +23,7 @@ export class AnnotationLayer {
     const geo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(p1.x, p1.y, 2), new THREE.Vector3(p2.x, p2.y, 2)
     ])
-    const mat = new THREE.LineBasicMaterial({ color: 0xff8844 })
+    const mat = new THREE.LineBasicMaterial({ color: 0xc2410c })
     const line = new THREE.Line(geo, mat)
     this.scene.add(line)
     this._objects.push(line)

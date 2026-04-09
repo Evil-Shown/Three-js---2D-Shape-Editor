@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { ParameterType, PARAM_TYPE_META } from '../parameters/ParameterTypes.js'
+import { ui } from '../theme/uiTheme.js'
 
 export default function ParameterRow({
   param,
@@ -93,11 +94,11 @@ export default function ParameterRow({
           />
         )}
         <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-          <button style={actionBtnStyle} onClick={saveEdit} title="Save">
-            <span style={{ color: '#44cc66' }}>&#10003;</span>
+          <button type="button" style={actionBtnStyle} onClick={saveEdit} title="Save">
+            <span style={{ color: ui.success }}>&#10003;</span>
           </button>
-          <button style={actionBtnStyle} onClick={cancelEdit} title="Cancel">
-            <span style={{ color: '#ff4444' }}>&#10007;</span>
+          <button type="button" style={actionBtnStyle} onClick={cancelEdit} title="Cancel">
+            <span style={{ color: ui.danger }}>&#10007;</span>
           </button>
         </div>
       </div>
@@ -108,8 +109,8 @@ export default function ParameterRow({
     <div
       style={{
         ...rowStyle,
-        borderColor: focused ? '#7fffd4' : rowStyle.border,
-        boxShadow: focused ? '0 0 0 1px #7fffd411' : 'none',
+        borderColor: focused ? ui.accentBorder : rowStyle.border,
+        boxShadow: focused ? `0 0 0 2px ${ui.accentSoft}` : 'none',
       }}
       onClick={onFocus}
       onDoubleClick={startEdit}
@@ -117,27 +118,28 @@ export default function ParameterRow({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ color: meta.color, fontSize: 14, width: 18, textAlign: 'center' }}>{meta.icon}</span>
-        <span style={{ color: '#7fffd4', fontWeight: 700, fontSize: 13, fontFamily: 'monospace', minWidth: 28 }}>
+        <span style={{ color: ui.accent, fontWeight: 700, fontSize: 13, fontFamily: 'monospace', minWidth: 28 }}>
           {param.name}
         </span>
-        <span style={{ color: '#888', fontSize: 11, flex: 1 }}>{param.description}</span>
-        <span style={{ color: '#aaa', fontSize: 12, fontFamily: 'monospace' }}>
+        <span style={{ color: ui.textMuted, fontSize: 11, flex: 1 }}>{param.description}</span>
+        <span style={{ color: ui.textSubtle, fontSize: 12, fontFamily: 'monospace' }}>
           {param.defaultValue}{meta.unit || 'mm'}
         </span>
       </div>
       {usageLabel && (
-        <div style={{ fontSize: 10, color: '#777', marginTop: 3, paddingLeft: 24 }}>
+        <div style={{ fontSize: 10, color: ui.textSubtle, marginTop: 3, paddingLeft: 24 }}>
           {usageLabel}
         </div>
       )}
       {param.type === ParameterType.DERIVED && param.expression && (
-        <div style={{ fontSize: 11, color: '#cc88ff', fontFamily: 'monospace', marginTop: 2, paddingLeft: 24 }}>
+        <div style={{ fontSize: 11, color: '#7c3aed', fontFamily: 'monospace', marginTop: 2, paddingLeft: 24 }}>
           = {param.expression}
         </div>
       )}
       <div style={{ display: 'flex', gap: 4, position: 'absolute', right: 6, top: 6 }}>
-        <button style={actionBtnStyle} onClick={startEdit} title="Edit">&#9998;</button>
+        <button type="button" style={actionBtnStyle} onClick={startEdit} title="Edit">&#9998;</button>
         <button
+          type="button"
           style={{
             ...actionBtnStyle,
             opacity: isReferenced ? 0.3 : 1,
@@ -154,20 +156,20 @@ export default function ParameterRow({
 const rowStyle = {
   position: 'relative',
   padding: '8px 34px 8px 8px',
-  background: '#1e2124',
-  borderRadius: 6,
+  background: ui.bgPanel,
+  borderRadius: 8,
   marginBottom: 4,
-  border: '1px solid #2a2d30',
+  border: `1px solid ${ui.border}`,
   cursor: 'pointer',
-  transition: 'border-color 0.15s',
+  transition: 'border-color 0.15s, box-shadow 0.15s',
 }
 
 const editInputStyle = {
   padding: '3px 6px',
-  background: '#252830',
-  border: '1px solid #3a3d42',
-  borderRadius: 3,
-  color: '#e0e3e6',
+  background: ui.bgInput,
+  border: `1px solid ${ui.borderStrong}`,
+  borderRadius: 6,
+  color: ui.text,
   fontSize: 12,
   outline: 'none',
   width: 56,
@@ -176,9 +178,9 @@ const editInputStyle = {
 const actionBtnStyle = {
   background: 'transparent',
   border: 'none',
-  color: '#888',
+  color: ui.textMuted,
   cursor: 'pointer',
   fontSize: 13,
   padding: '2px 4px',
-  borderRadius: 3,
+  borderRadius: 4,
 }
