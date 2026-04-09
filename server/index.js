@@ -1,12 +1,18 @@
 const config = require('./config')
 const { createPool } = require('./db/pool')
+const { ensureDatabaseExists } = require('./db/ensureDatabase')
 const { runMigrations } = require('./db/runMigrations')
 const { createApp } = require('./app')
 const { startAckWorkerIfEnabled, shutdownQueue } = require('./services/queueService')
 
-const pool = createPool()
+/** @type {import('mysql2/promise').Pool | undefined} */
+let pool
 
 async function bootstrap() {
+  if (!config.isProd) {
+    await ensureDatabaseExists()
+  }
+  pool = createPool()
   await runMigrations(pool)
   startAckWorkerIfEnabled()
 
@@ -15,12 +21,23 @@ async function bootstrap() {
     console.log(`GSAP Editor API listening on port ${config.port} (${config.nodeEnv})`)
   })
 
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `[server] Port ${config.port} is already in use. Stop the other process or set PORT in server/.env (e.g. PORT=3002).`
+      )
+    } else {
+      console.error('[server] HTTP server error:', err.message)
+    }
+    process.exit(1)
+  })
+
   const shutdown = async (signal) => {
     console.log(`\n${signal} received, shutting down...`)
     server.close(async () => {
       try {
         await shutdownQueue()
-        await pool.end()
+        if (pool) await pool.end()
       } finally {
         process.exit(0)
       }
