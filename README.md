@@ -1,99 +1,231 @@
-# GSAP Editor (2D Shape Editor)
+# Three.js 2D Shape Editor
 
-A modern 2D shape editor built with React, Three.js, and Vite. Create, edit, and export 2D geometric shapes with snapping, constraints, parameterized expressions, annotations, and real-time Three.js preview. Exported shapes can be saved to a MySQL database and optionally downloaded as JSON.
+Browser-based CAD-like 2D editor for designing parametric glass shapes.  
+It combines a React + Three.js frontend with a Node.js backend, supports snapping and constraints, and exports shape JSON to both local file and database workflows.
 
-## Features
+## Overview
 
-- **Shape tools**: Lines (multi-segment), arcs (center–radius or 3-point), rectangles, circles.
-- **Edit tools**: Select, Move, Trim (line–line), Offset (parallel line by distance).
-- **Snapping**: Endpoint, midpoint, center, intersection (line–line, line–arc, arc–arc), perpendicular, tangent, angle increment, grid.
-- **Constraints**: Horizontal/vertical lock, fixed length/angle/radius, parallel to edge.
-- **Parameter mode** (when shape is closed): Edge Tagger (E1–E8), Point Tagger (X/Y expressions for p0, p1, …), expression validation, topological sort for point dependencies.
-- **Info**: Measure (distance, angle, ΔX, ΔY), Dimension (annotation line + text).
-- **Export**: Build JSON from canvas → save to MySQL → toast notifications → optional download. JSON includes edges, optional parameters, point expressions, edge services, shape metadata, trim definition.
-- **Undo/Redo**: Command history (max 200 steps).
-- **Preview**: Real-time rendering via Three.js orthographic camera; adaptive grid.
+This repository contains two applications:
 
-## Project structure
+- `gsap-editor` - frontend editor built with React, Vite, and Three.js
+- `server` - backend API built with Express + MySQL, with optional Redis/BullMQ integration
 
-- **`gsap-editor/`** — React + Vite frontend (editor UI, tools, export).
-- **`server/`** — Node.js + Express API; connects to MySQL; auto-creates `shapes` table on first run.
+The frontend communicates with the backend through `/api/*` (proxied by Vite in development).  
+The backend stores and serves shape definitions, and supports downstream processing queue integration.
 
-Frontend (`gsap-editor/`):
+## Core Capabilities
 
-- `src/components/` — Editor, Toolbar, ParameterPanel, Toast, SaveConfirmModal, StatusBar, …
-- `src/api/` — `shapesApi.js` (saveShape, listShapes, getShape, deleteShape, checkServerHealth)
-- `src/core/` — EventBus, CommandHistory, CoordinateEngine
-- `src/store/` — GeometryStore, ParameterStore
-- `src/snap/`, `src/constraints/`, `src/tools/`, `src/render/`, `src/three/`, `src/parameters/`, `src/export/`
+### Geometry authoring
 
-See **`gsap-editor/PROJECT-DOCUMENTATION.md`** for full structure, logic, and maths. See **`gsap-editor/TOOL-GUIDE.md`** for tool usage and the export flow.
+- Draw lines (including chained segments), arcs, rectangles, and circles
+- Select and move existing geometry
+- Trim and offset edges
+- Real-time visual rendering in an orthographic Three.js scene
 
-## Getting started
+### Precision controls
 
-### Prerequisites
+- Snapping modes: endpoint, midpoint, center, intersection, perpendicular, tangent, angle increment, grid
+- Constraint tools: horizontal/vertical, fixed dimensions/angles/radius, parallel relationships
+- Command history with undo/redo
 
-- Node.js (v16+)
+### Parametric workflow
+
+- Parameter mode for closed shapes
+- Edge tagging (`E1`, `E2`, ...), point tagging, expression-based point coordinates
+- Dependency-safe expression evaluation (topological ordering)
+
+### Measurement and annotation
+
+- Distance/angle/delta inspection
+- Dimension line annotations
+
+### Export and persistence
+
+- Export generated shape JSON
+- Save to MySQL via backend API
+- Optional direct JSON download from UI modal
+- User feedback via toasts and status modals
+
+## Repository Layout
+
+```text
+Three js - 2D Shape Editor/
+|- README.md
+|- package.json                 # Root dev orchestration (concurrently)
+|- gsap-editor/                 # React + Vite frontend
+|  |- src/
+|  |  |- components/
+|  |  |- tools/
+|  |  |- constraints/
+|  |  |- snap/
+|  |  |- export/
+|  |  |- api/
+|  |  `- three/
+|  `- package.json
+`- server/                      # Express API + MySQL (+ optional Redis/BullMQ)
+   |- config/
+   |- db/
+   |- routes/
+   |- services/
+   `- package.json
+```
+
+Additional docs:
+
+- `gsap-editor/PROJECT-DOCUMENTATION.md`
+- `gsap-editor/TOOL-GUIDE.md`
+
+## Technology Stack
+
+- Frontend: React 19, Three.js, Vite
+- Backend: Node.js, Express, MySQL (`mysql2`)
+- Queue/async support: Redis + BullMQ (used by backend services)
+- Tooling: ESLint, nodemon, concurrently
+
+Note: `GSAP` remains in naming for legacy reasons, but animation tooling is not the core of this project.
+
+## Prerequisites
+
+- Node.js 18+ recommended
 - npm
-- MySQL (for saving shapes to the database)
+- MySQL 8+ running locally or remotely
+- Redis (optional, for queue-based processing features)
 
-### 1. Database setup
+## Local Setup
 
-1. Create the database: open MySQL Workbench (or CLI) and run **once** the statements in **`server/setup.sql`** (create database `gsap_editor`, use it). The server auto-creates the `shapes` table on first run.
-2. In **`server/`**, copy `.env.example` to `.env` and set your MySQL password (e.g. `DB_PASSWORD=your_password_here`).
+### 1) Install dependencies
 
-### 2. Install and run
+From repo root:
 
-**Option A — one command (recommended):** From the project root, install dependencies once (root + `server/` + `gsap-editor/`), then run both in one terminal:
-
-```sh
-cd "Three js - 2D Shape Editor"
+```bash
 npm install
-cd server
-npm install
-cd ../gsap-editor
-npm install
+cd server && npm install
+cd ../gsap-editor && npm install
 cd ..
+```
+
+### 2) Configure backend environment
+
+Create `server/.env` and set at least database credentials:
+
+```env
+NODE_ENV=development
+PORT=3001
+CORS_ORIGIN=http://localhost:5173
+
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_password_here
+DB_NAME=gsap_editor
+DB_POOL_LIMIT=10
+
+# Optional auth/claims
+AUTH_DISABLED=true
+JWT_SECRET=
+JWT_CLAIM_USER_ID=sub
+JWT_CLAIM_ORG_ID=organization_id
+JWT_CLAIM_PROJECT_ID=project_id
+
+# Optional queue settings
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_URL=redis://127.0.0.1:6379
+SHAPE_JOB_LIST_KEY=gsap:shape-processing:jobs
+BULLMQ_ENABLE_ACK_WORKER=true
+BULLMQ_SHAPE_QUEUE=shape-processing
+```
+
+### 3) Initialize database
+
+- Create database `gsap_editor` if it does not exist
+- Run SQL in `server/setup.sql` if you are starting from scratch
+- On startup, the backend also runs migration/bootstrap logic for required tables
+
+## Running the Project
+
+### Recommended: run both services together
+
+```bash
 npm run dev
 ```
 
-This starts the backend (http://localhost:3001) and frontend (http://localhost:5173) together with prefixed logs (`[server]` / `[frontend]`).
+This starts:
 
-**Option B — two terminals:**  
-Terminal 1: `cd server` → `npm install` → `npm run dev`.  
-Terminal 2: `cd gsap-editor` → `npm install` → `npm run dev`.  
-Open the frontend URL (e.g. http://localhost:5173). Vite proxies `/api/*` to the backend.
+- Backend API on `http://localhost:3001`
+- Frontend app on `http://localhost:5173`
 
-### Export flow (Generate JSON / File → Export JSON)
+### Run services separately
 
-1. Payload is built from the canvas geometry (and parameters if in Parameter Mode).
-2. **"Saving to database…"** loading toast appears.
-3. Shape is POSTed to MySQL via `/api/shapes`.
-4. **"shape saved to database!"** success toast (bottom-right, auto-dismisses).
-5. **"Saved to Database"** modal: **No, thanks** (close; JSON only in DB) or **⬇ Download JSON** (download file and close).
-6. If the backend is unreachable, an error is toasted and the modal still opens so you can download the JSON locally.
+Backend:
 
-## Scripts
+```bash
+cd server
+npm run dev
+```
 
-**From project root:**
+Frontend:
 
-- `npm run dev` — Run backend + frontend together (concurrently)
-- `npm run dev:server` — Backend only (`server/`)
-- `npm run dev:frontend` — Frontend only (`gsap-editor/`)
+```bash
+cd gsap-editor
+npm run dev
+```
 
-**Frontend (`gsap-editor/`):** `npm run dev` | `npm run build` | `npm run preview`
+## Available Scripts
 
-**Backend (`server/`):** `npm run dev` (nodemon) | `npm start` (node)
+### Root
 
-## Technologies
+- `npm run dev` - run frontend + backend together
+- `npm run dev:server` - run backend only
+- `npm run dev:frontend` - run frontend only
 
-- [React](https://react.dev/) (React 19)
-- [Three.js](https://threejs.org/) — orthographic scene, lines/arcs, text sprites
-- [Vite](https://vitejs.dev/) — build and dev server (proxy to API)
-- Node.js, Express, MySQL (backend)
+### Frontend (`gsap-editor`)
 
-*(The name “GSAP Editor” is legacy; GSAP is not used in the current codebase.)*
+- `npm run dev` - start Vite dev server
+- `npm run build` - production build
+- `npm run preview` - preview build
+- `npm run lint` - run ESLint
+
+### Backend (`server`)
+
+- `npm run dev` - run with nodemon
+- `npm start` - run with Node.js
+- `npm test` - run Jest tests
+
+## API and Export Flow
+
+Typical export flow from the editor:
+
+1. User creates geometry on canvas
+2. App generates normalized JSON payload
+3. Frontend `POST`s payload to `/api/shapes`
+4. Backend validates and writes shape data to MySQL
+5. UI shows success/failure toast and export modal
+6. User can optionally download JSON locally
+
+If backend is unavailable, local JSON download still supports offline workflow.
+
+## Development Notes
+
+- Vite dev proxy forwards `/api` to `http://localhost:3001`
+- Backend startup checks and initializes database prerequisites
+- In production mode, set `JWT_SECRET` unless auth is explicitly disabled
+- If API port conflicts, change `PORT` in `server/.env`
+
+## Troubleshooting
+
+- **Frontend cannot reach API**: verify backend is running and `PORT` matches Vite proxy target
+- **Database connection fails**: verify `DB_*` env values and MySQL server status
+- **Port already in use**: change `PORT` in `server/.env`, restart server
+- **CORS issues**: confirm `CORS_ORIGIN` includes your frontend URL
+
+## Roadmap Ideas
+
+- Additional CAD operations (fillet/chamfer/boolean tools)
+- Richer parametric expression authoring UI
+- Batch export and shape templates
+- Improved collaboration/versioning workflow
 
 ## License
 
-MIT.
+MIT
