@@ -235,10 +235,17 @@ class ShapeService {
     }
 
     if (!res.ok) {
+      // Remote sync failures should not block local editor deletion.
+      // We keep user intent first and rely on later reconciliation.
       const msg =
         (body && (body.error || body.message)) ||
         `Shapes-service sync delete failed (${res.status})`
-      throw new AppError(msg, 502, 'SHAPES_SERVICE_SYNC_DELETE_FAILED')
+      console.warn('[shapeService] shapes-service sync-delete rejected:', {
+        status: res.status,
+        message: msg,
+        payload,
+      })
+      return { synced: false, reason: 'remote_error', status: res.status, message: msg }
     }
 
     return { synced: true, remoteDeleted: Boolean(body && body.deleted) }
