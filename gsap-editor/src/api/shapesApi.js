@@ -47,7 +47,10 @@ export async function listShapes(query = {}) {
   if (query.project_id) q.set('project_id', query.project_id)
   if (query.status) q.set('status', query.status)
   const suffix = q.toString() ? `?${q}` : ''
-  const res = await fetch(`${API_BASE}/shapes${suffix}`, { headers: buildHeaders() })
+  const res = await fetch(`${API_BASE}/shapes${suffix}`, {
+    headers: buildHeaders(),
+    cache: 'no-store',
+  })
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || `Server error ${res.status}`)
   return data.shapes
@@ -94,7 +97,11 @@ export async function getShapeStatus(id) {
  * Delete a shape by id.
  */
 export async function deleteShape(id) {
-  const res = await fetch(`${API_BASE}/shapes/${id}`, { method: 'DELETE', headers: buildHeaders() })
+  const res = await fetch(`${API_BASE}/shapes/${id}`, {
+    method: 'DELETE',
+    headers: buildHeaders(),
+    cache: 'no-store',
+  })
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || `Server error ${res.status}`)
   return data

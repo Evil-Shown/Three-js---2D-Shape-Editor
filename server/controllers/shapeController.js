@@ -20,6 +20,7 @@ function createShapeController(pool) {
     }),
 
     list: asyncHandler(async (req, res) => {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate')
       const data = await service.listShapes(req.user, req.query)
       res.json({ success: true, ...data })
     }),
@@ -35,8 +36,12 @@ function createShapeController(pool) {
     }),
 
     remove: asyncHandler(async (req, res) => {
-      await service.deleteShape(req.params.id, req.user)
-      res.json({ success: true, message: 'Shape deleted.' })
+      const result = await service.deleteShape(req.params.id, req.user)
+      res.json({
+        success: true,
+        message: 'Shape deleted; remaining shapes renumbered.',
+        renumbered: result.renumbered,
+      })
     }),
 
     update: asyncHandler(async (req, res) => {

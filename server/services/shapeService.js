@@ -134,11 +134,34 @@ class ShapeService {
   }
 
   async deleteShape(id, user) {
-    const ok = await this.shapes.delete(id, user.organizationId)
-    if (!ok) {
-      throw new AppError('Shape not found', 404, 'NOT_FOUND')
+    const numericId = Number.parseInt(String(id), 10)
+    if (!Number.isFinite(numericId)) {
+      throw new AppError('Invalid shape id', 400, 'INVALID_ID')
     }
-    return { deleted: true }
+
+    const conn = await this.pool.getConnection()
+    let renumbered = 0
+    try {
+      await conn.beginTransaction()
+      const ok = await this.shapes.delete(numericId, user.organizationId, conn)
+      if (!ok) {
+        throw new AppError('Shape not found', 404, 'NOT_FOUND')
+      }
+      const { renumbered: n } = await this.shapes.renumberOrganizationShapes(conn, user.organizationId)
+      renumbered = n
+      await conn.commit()
+    } catch (err) {
+      try {
+        await conn.rollback()
+      } catch {
+        /* ignore */
+      }
+      throw err
+    } finally {
+      conn.release()
+    }
+
+    return { deleted: true, renumbered }
   }
 
   async nextNumber(user) {

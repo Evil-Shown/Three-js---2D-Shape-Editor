@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { listShapesWithPayload } from '../api/shapesApi'
+import { listShapesWithPayload, deleteShape } from '../api/shapesApi'
 import { shapePayloadToSvg } from '../preview/shapePreviewSvg'
+import { Toaster, toast } from '../components/Toast'
 import './CustomShapesGallery.css'
 
 export default function CustomShapesGallery() {
@@ -9,6 +10,7 @@ export default function CustomShapesGallery() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -30,6 +32,23 @@ export default function CustomShapesGallery() {
 
   const openEditor = (id) => {
     navigate(`/editor/${id}`)
+  }
+
+  const handleDelete = async (row, e) => {
+    e?.preventDefault?.()
+    e?.stopPropagation?.()
+    const title = row.shape_name || row.json_data?.name || `Shape #${row.id}`
+    if (!window.confirm(`Delete "${title}" from the library? This cannot be undone.`)) return
+    setDeletingId(row.id)
+    try {
+      await deleteShape(row.id)
+      toast.success('Shape deleted. Remaining shape numbers were updated in the database.')
+      await load()
+    } catch (err) {
+      toast.error(err?.message || String(err))
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   return (
@@ -77,37 +96,58 @@ export default function CustomShapesGallery() {
               const preview = payload ? shapePayloadToSvg(payload, { width: 320, height: 220, pad: 16 }) : null
               const title = row.shape_name || payload?.name || `Shape #${row.id}`
               return (
-                <li key={row.id}>
-                  <button
-                    type="button"
-                    className="sd-tile"
-                    onClick={() => openEditor(row.id)}
-                    title={`Edit ${title}`}
-                  >
-                    <div className="sd-tile__canvas">
-                      {preview ? (
-                        <span
-                          className="sd-tile__svg"
-                          dangerouslySetInnerHTML={{ __html: preview.svg }}
-                        />
-                      ) : (
-                        <span className="sd-tile__placeholder">No geometry preview</span>
-                      )}
+                <li key={row.id} className="sd-tile-wrap">
+                  <div className="sd-tile sd-tile--card">
+                    <button
+                      type="button"
+                      className="sd-tile__body"
+                      onClick={() => openEditor(row.id)}
+                      title={`Edit ${title}`}
+                    >
+                      <div className="sd-tile__canvas">
+                        {preview ? (
+                          <span
+                            className="sd-tile__svg"
+                            dangerouslySetInnerHTML={{ __html: preview.svg }}
+                          />
+                        ) : (
+                          <span className="sd-tile__placeholder">No geometry preview</span>
+                        )}
+                      </div>
+                      <div className="sd-tile__meta">
+                        <span className="sd-tile__name">{title}</span>
+                        {row.shape_number && (
+                          <span className="sd-tile__num">#{row.shape_number}</span>
+                        )}
+                      </div>
+                    </button>
+                    <div className="sd-tile__actions">
+                      <button
+                        type="button"
+                        className="sd-tile__cta"
+                        onClick={() => openEditor(row.id)}
+                        title={`Edit ${title}`}
+                      >
+                        Edit in CAD →
+                      </button>
+                      <button
+                        type="button"
+                        className="sd-tile__delete"
+                        title={`Delete ${title}`}
+                        disabled={deletingId === row.id || loading}
+                        onClick={(e) => handleDelete(row, e)}
+                      >
+                        {deletingId === row.id ? '…' : 'Delete'}
+                      </button>
                     </div>
-                    <div className="sd-tile__meta">
-                      <span className="sd-tile__name">{title}</span>
-                      {row.shape_number && (
-                        <span className="sd-tile__num">#{row.shape_number}</span>
-                      )}
-                      <span className="sd-tile__cta">Edit in CAD →</span>
-                    </div>
-                  </button>
+                  </div>
                 </li>
               )
             })}
           </ul>
         )}
       </main>
+      <Toaster />
     </div>
   )
 }
