@@ -1,8 +1,12 @@
 // src/api/shapesApi.js
 // Frontend API client for the GSAP Editor backend.
-// The Vite dev proxy forwards /api/* to http://localhost:3001
+// The Vite dev proxy forwards /api/* to http://localhost:3001 (editor-local draft DB).
+// `publishToLibrary` goes directly to shapes-service (ERP) at port 8092 so the shape
+// becomes visible to Opti-Shapes' Simple Shape dialog.
 
 const API_BASE = '/api'
+const SHAPES_SERVICE_BASE =
+  import.meta.env.VITE_SHAPES_SERVICE_URL || 'http://localhost:8092'
 
 function buildHeaders() {
   const headers = { 'Content-Type': 'application/json' }
@@ -13,6 +17,13 @@ function buildHeaders() {
   if (org) headers['x-organization-id'] = org
   if (project) headers['x-project-id'] = project
   return headers
+}
+
+function parseOrgId() {
+  const raw = import.meta.env.VITE_ERP_ORG_ID
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
 }
 
 /**
@@ -132,5 +143,57 @@ export async function checkServerHealth() {
     return res.ok
   } catch {
     return false
+  }
+}
+
+/**
+ * Publish a shape to the ERP shape library (shapes-service, port 8092) so it
+ * appears alongside built-in shapes in Opti-Shapes' Simple Shape dialog.
+ *
+ * When `existingShapeNo` is provided the row at that shape number is updated
+ * in place; otherwise the server auto-assigns the next runtime number (44..99).
+ *
+ * Network/CORS failures are surfaced as errors so the caller can decide how
+ * visible to make them; the editor's local draft save is independent and
+ * should already have succeeded before this is called.
+ *
+ * @param {object} jsonPayload        — full export payload object (the same object saved to the draft DB)
+ * @param {string|null} [existingShapeNo] — optional library shapeNo returned by a previous publish of this shape
+ * @returns {Promise<{ shapeNo: string, created: boolean }>}
+ */
+export async function publishToLibrary(jsonPayload, existingShapeNo = null) {
+  if (jsonPayload == null || typeof jsonPayload !== 'object') {
+    throw new Error('publishToLibrary: jsonPayload must be an object')
+  }
+
+  const body = {
+    jsonDefinition: JSON.stringify(jsonPayload),
+    organizationId: parseOrgId(),
+  }
+  if (existingShapeNo != null && String(existingShapeNo).trim() !== '') {
+    body.shapeNo = String(existingShapeNo).trim()
+  }
+
+  const res = await fetch(`${SHAPES_SERVICE_BASE}/v1/library/custom-shapes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  let data = null
+  try {
+    data = await res.json()
+  } catch {
+    // non-JSON response: leave data null and fall through to error handling
+  }
+
+  if (!res.ok) {
+    const msg = (data && (data.error || data.message)) || `Shapes-service error ${res.status}`
+    throw new Error(msg)
+  }
+
+  return {
+    shapeNo: data?.shapeNo != null ? String(data.shapeNo) : null,
+    created: Boolean(data?.created),
   }
 }

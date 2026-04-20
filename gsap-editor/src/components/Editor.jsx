@@ -41,7 +41,7 @@ import DetectedDimensionsPanel from './DetectedDimensionsPanel'
 import StatusBar from './StatusBar'
 import { Toaster, toast } from './Toast'
 import SaveConfirmModal from './SaveConfirmModal'
-import { saveShape, getNextShapeNumber, getShape, updateShape } from '../api/shapesApi'
+import { saveShape, getNextShapeNumber, getShape, updateShape, publishToLibrary } from '../api/shapesApi'
 import { applyShapePayloadToStores } from '../import/shapePayloadImport'
 import { rebuildEdgeMeshes } from '../three/rebuildEdgeMeshes'
 import { CAD } from '../theme/cadTheme.js'
@@ -112,6 +112,8 @@ export default function Editor({ shapeId = null } = {}) {
   const canvasAreaRef = useRef(null)
   /** Set when a row is loaded from GET /shapes/:id — used so save always updates that row (PUT). */
   const loadedShapeDbIdRef = useRef(null)
+  /** Library shapeNo returned by shapes-service after a successful publish — reused for in-place updates. */
+  const publishedLibraryShapeNoRef = useRef(null)
 
   const syncNextShapeMetadata = useCallback(async () => {
     const eng = enginesRef.current
@@ -212,6 +214,7 @@ export default function Editor({ shapeId = null } = {}) {
 
     let cancelled = false
     loadedShapeDbIdRef.current = null
+    publishedLibraryShapeNoRef.current = null
 
     // --- Event subscriptions ---
     const unsubs = []
@@ -361,6 +364,7 @@ export default function Editor({ shapeId = null } = {}) {
           }
           const rid = Number(row.id)
           loadedShapeDbIdRef.current = Number.isFinite(rid) ? rid : null
+          publishedLibraryShapeNoRef.current = null
           eng.history.clear()
           eng.annotationLayer.clear()
           rebuildEdgeMeshes(eng.threeScene, eng.store, eng.meshMap)
@@ -578,6 +582,7 @@ export default function Editor({ shapeId = null } = {}) {
     switch (action) {
       case 'new':
         loadedShapeDbIdRef.current = null
+        publishedLibraryShapeNoRef.current = null
         eng.store.clear()
         eng.paramStore.clear()
         syncNextShapeMetadata()
@@ -669,6 +674,7 @@ export default function Editor({ shapeId = null } = {}) {
     const sid =
       fromLoaded != null && Number.isFinite(Number(fromLoaded)) ? Number(fromLoaded) : fromRoute
 
+    let draftSaveOk = false
     try {
       if (sid != null) {
         await updateShape(sid, payload.name, payload)
@@ -679,6 +685,7 @@ export default function Editor({ shapeId = null } = {}) {
         toast.success(`"${payload.name}" saved to database!`)
         setSaveModal({ payload, fileName: payload.name })
       }
+      draftSaveOk = true
     } catch (err) {
       if ((err.message || '').toLowerCase().includes('shape number')) {
         toast.error(err.message)
@@ -687,6 +694,26 @@ export default function Editor({ shapeId = null } = {}) {
       }
       // Still let user download even when DB is unavailable
       setSaveModal({ payload, fileName: payload.name, dbError: true })
+    }
+
+    // Publish to the ERP shape library (shapes-service) so the shape appears in
+    // Opti-Shapes' Simple Shape dialog. Non-fatal: a failure here does not undo
+    // the local draft save — the user is simply informed the ERP push failed.
+    if (draftSaveOk) {
+      try {
+        const { shapeNo, created } = await publishToLibrary(
+          payload,
+          publishedLibraryShapeNoRef.current,
+        )
+        if (shapeNo) publishedLibraryShapeNoRef.current = shapeNo
+        toast.success(
+          created
+            ? `Published to shape library as #${shapeNo}`
+            : `Shape library entry #${shapeNo} updated`,
+        )
+      } catch (err) {
+        toast.error(`Saved locally, but publishing to the shape library failed: ${err.message}`)
+      }
     }
   }, [shapeId])
 

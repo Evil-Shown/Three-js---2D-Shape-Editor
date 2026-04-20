@@ -1,11 +1,27 @@
 import { Link } from 'react-router-dom'
 import './LandingPage.css'
 
+const OPTI_SHAPES_URL = import.meta.env.VITE_OPTI_SHAPES_URL || 'http://localhost:8090'
+
 export default function LandingPage() {
+  const handleBackToOptiShapes = () => {
+    window.location.href = OPTI_SHAPES_URL
+  }
+
   return (
     <div className="sd-landing">
       <div className="sd-landing__glow" aria-hidden />
       <div className="sd-landing__grid" aria-hidden />
+
+      <button
+        type="button"
+        className="sd-landing__back"
+        onClick={handleBackToOptiShapes}
+        aria-label="Back to Opti-Shapes"
+      >
+        <span className="sd-landing__back-arrow" aria-hidden>←</span>
+        <span>Back to Opti-Shapes</span>
+      </button>
 
       <header className="sd-landing__header">
         <span className="sd-landing__badge">2D · Parametric · Three.js</span>
