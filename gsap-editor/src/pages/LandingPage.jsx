@@ -5,7 +5,8 @@ const OPTI_SHAPES_URL = import.meta.env.VITE_OPTI_SHAPES_URL || 'http://localhos
 
 export default function LandingPage() {
   const handleBackToOptiShapes = () => {
-    window.location.href = OPTI_SHAPES_URL
+    const base = OPTI_SHAPES_URL.replace(/\/$/, '')
+    window.location.href = `${base}/shapes/editor?fromDrawer=1`
   }
 
   return (
