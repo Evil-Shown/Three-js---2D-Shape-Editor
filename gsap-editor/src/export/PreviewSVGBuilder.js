@@ -498,10 +498,17 @@ export class PreviewSVGBuilder {
       if (sweep <= 0) sweep += 2 * Math.PI
     }
 
-    // NOTE: Y-flip inverts the sweep direction in SVG space
+    // IMPORTANT: the editor's {x,y,center,radius,startAngle,endAngle} are flipped
+    // into SVG (Y-down) coordinates via `_tx/_ty`. Because BOTH the center and the
+    // sampled arc points are flipped consistently, the arc's visual rotation sense
+    // is preserved — `editor clockwise=true` still appears clockwise on screen in
+    // the generated SVG. SVG `sweep-flag=1` means "positive-angle direction", which
+    // in Y-down renders as visually clockwise. Hence the flag maps DIRECTLY to the
+    // editor's `clockwise` bit; do NOT invert it (previous `!clockwise` rule caused
+    // fillets to render as their mirror-image outer arc).
     return {
       largeArc: sweep > Math.PI,
-      sweep: !arc.clockwise,  // flip because Y is inverted in SVG
+      sweep: !!arc.clockwise,
     }
   }
 

@@ -2,6 +2,7 @@ const { AppError } = require('../middleware/AppError')
 const { ShapeRepository } = require('../repositories/shapeRepository')
 const { ShapeLogRepository } = require('../repositories/shapeLogRepository')
 const { enqueueShapeProcessing } = require('./queueService')
+const config = require('../config')
 
 class ShapeService {
   constructor(pool) {
@@ -139,6 +140,15 @@ class ShapeService {
       throw new AppError('Invalid shape id', 400, 'INVALID_ID')
     }
 
+    const existing = await this.shapes.findById(numericId, user.organizationId)
+    if (!existing) {
+      throw new AppError('Shape not found', 404, 'NOT_FOUND')
+    }
+
+    // Keep editor and Opti library in sync: remove the published custom-shape row first.
+    // If remote sync fails we abort local delete to avoid diverging catalogs.
+    await this.deletePublishedCustomShape(existing, user)
+
     const conn = await this.pool.getConnection()
     let renumbered = 0
     try {
@@ -162,6 +172,76 @@ class ShapeService {
     }
 
     return { deleted: true, renumbered }
+  }
+
+  async deletePublishedCustomShape(existingShapeRow, user) {
+    let jsonObj = null
+    try {
+      jsonObj =
+        typeof existingShapeRow.json_data === 'string'
+          ? JSON.parse(existingShapeRow.json_data)
+          : existingShapeRow.json_data
+    } catch {
+      jsonObj = null
+    }
+
+    const className =
+      (jsonObj &&
+        jsonObj.shapeMetadata &&
+        typeof jsonObj.shapeMetadata.className === 'string' &&
+        jsonObj.shapeMetadata.className.trim()) ||
+      null
+
+    // The editor numbers shapes in the designer range (100+) while shapes-service
+    // stores publications in the runtime range (44..99). So editor shape_number
+    // will almost never match shapes-service shape_no — className is the real
+    // join key. Send both and let the server OR them.
+    // organizationId is optional: in local/dev runs we publish with `null` scope,
+    // so pass null through instead of silently skipping the remote delete.
+    const orgRaw = user?.organizationId
+    const orgStr = orgRaw == null ? '' : String(orgRaw).trim()
+    const orgNum = orgStr === '' ? null : Number(orgStr)
+
+    const payload = {
+      organizationId: Number.isFinite(orgNum) ? orgNum : null,
+      editorShapeNo: existingShapeRow.shape_number ? String(existingShapeRow.shape_number) : null,
+      editorClassName: className,
+    }
+
+    let res
+    try {
+      res = await fetch(
+        `${config.shapesServiceBaseUrl}/v1/library/custom-shapes/sync-delete`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      )
+    } catch (err) {
+      // Network errors shouldn't strand the user with a broken local delete.
+      // Surface the failure but don't throw — local delete still proceeds so the
+      // editor gallery reflects the user's intent. A retry button in Opti can
+      // reconcile later.
+      console.warn('[shapeService] shapes-service sync-delete unreachable:', err?.message || err)
+      return { synced: false, reason: 'unreachable' }
+    }
+
+    let body = null
+    try {
+      body = await res.json()
+    } catch {
+      body = null
+    }
+
+    if (!res.ok) {
+      const msg =
+        (body && (body.error || body.message)) ||
+        `Shapes-service sync delete failed (${res.status})`
+      throw new AppError(msg, 502, 'SHAPES_SERVICE_SYNC_DELETE_FAILED')
+    }
+
+    return { synced: true, remoteDeleted: Boolean(body && body.deleted) }
   }
 
   async nextNumber(user) {

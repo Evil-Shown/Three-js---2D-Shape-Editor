@@ -9,12 +9,26 @@ const { createShapeRouter } = require('./routes/shapeRoutes')
 function createApp(pool) {
   const app = express()
 
-  app.use(
-    cors({
-      origin: config.corsOrigins.length ? config.corsOrigins : true,
-      credentials: true,
-    })
-  )
+  // Opti-Shapes calls us with custom `x-organization-id` / `x-user-id` headers,
+  // which the browser treats as non-simple → it sends a CORS preflight first.
+  // Without allowedHeaders declared explicitly, those preflights fail with
+  // "Failed to fetch" in the Opti UI when deleting a custom shape.
+  const corsOptions = {
+    origin: config.corsOrigins.length ? config.corsOrigins : true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-organization-id',
+      'x-user-id',
+    ],
+  }
+  app.use(cors(corsOptions))
+  // Explicit preflight short-circuit so OPTIONS requests never fall through to
+  // the 404 handler below (the `cors` middleware alone already handles them,
+  // but this makes the intent obvious and robust to future middleware changes).
+  app.options('*', cors(corsOptions))
   app.use(express.json({ limit: '10mb' }))
 
   app.use('/api', healthRoutes)

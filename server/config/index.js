@@ -32,7 +32,15 @@ module.exports = {
   isProd,
   port: parseIntEnv('PORT', 3001),
 
-  corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  // Default allowlist covers our dev surfaces:
+  //   5173  - Vite (gsap-editor frontend)
+  //   8090  - Opti-Shapes (Vite) — calls our /api/shapes to sync custom-shape deletes
+  //   3000  - occasional CRA-style dev
+  // Override with CORS_ORIGIN=<comma-separated list> in .env when deploying.
+  corsOrigins: (
+    process.env.CORS_ORIGIN ||
+    'http://localhost:5173,http://localhost:8090,http://127.0.0.1:5173,http://127.0.0.1:8090,http://localhost:3000'
+  )
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
@@ -69,4 +77,7 @@ module.exports = {
     enableAckWorker: parseBool('BULLMQ_ENABLE_ACK_WORKER', true),
     queueName: process.env.BULLMQ_SHAPE_QUEUE || 'shape-processing',
   },
+
+  /** Shapes-service base URL used to sync custom-shape deletes with Opti library. */
+  shapesServiceBaseUrl: process.env.SHAPES_SERVICE_BASE_URL || 'http://localhost:8092',
 }

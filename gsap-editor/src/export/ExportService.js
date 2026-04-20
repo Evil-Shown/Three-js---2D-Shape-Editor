@@ -34,6 +34,10 @@ export class ExportService {
     const chainedEdges = this._chainOrderEdges(cleanEdges)
     this._weldChainGaps(chainedEdges)
 
+    // `edges` stays in the editor's native Y-up math space — the editor gallery
+    // preview (`shapePayloadToSvg`) and round-trip import (`applyShapePayloadToStores`)
+    // both rely on that. The shapes-service side mirrors Y when handing the payload
+    // to the runtime engine (which expects SVG-style Y-down geometry).
     const payload = {
       name: meta.name,
       version: '2.0',
@@ -100,6 +104,7 @@ export class ExportService {
     const chainedEdges = this._chainOrderEdges(cleanEdges)
     this._weldChainGaps(chainedEdges)
 
+    // Keep `edges` in editor-native Y-up coordinates — see note in exportJSON().
     const payload = {
       name: meta.name,
       version: '2.0',
@@ -805,10 +810,12 @@ export class ExportService {
    * Converts editor's arc representation {startAngle, endAngle, clockwise}
    * to SVG / Java EdgeBuilder flags:
    *   largeArc: true if the arc sweeps > 180°
-   *   sweep:    true if clockwise (positive rotation in screen space)
+   *   sweep:    SVG-space sweep flag (Y-down)
    *
-   * The Java EdgeBuilder's arcEdge(radius, largeArc, sweep, endPoint)
-   * uses these flags to determine which of the 4 possible arcs to draw.
+   * Editor geometry is Y-up (math space), while SVG/preview is Y-down. Because
+   * of that axis flip, sweep must be inverted from the editor's clockwise flag.
+   * Keeping this aligned with PreviewSVGBuilder avoids arc-only mirror/flip
+   * mismatches between thumbnail preview and generated shape geometry.
    */
   _computeArcFlags(arc) {
     // Compute the net sweep angle
