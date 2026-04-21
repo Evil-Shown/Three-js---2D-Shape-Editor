@@ -66,11 +66,69 @@ input {
 }
 
 .app-header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-weight: 700;
-  font-size: 17px;
+  font-size: 15px;
   letter-spacing: -0.02em;
+  color: var(--sd-text-secondary);
+  margin-right: 0;
+  padding-left: 2px;
+}
+
+.app-header-brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: rgba(13, 148, 136, 0.1);
+  color: var(--sd-accent-hover);
+}
+
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-header-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--sd-border-strong);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--sd-accent-hover);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
+}
+
+.app-header-link span:first-child {
+  line-height: 0;
+  transform: translateX(0);
+  transition: transform 0.15s ease;
+}
+
+.app-header-link:hover {
+  border-color: #5eead4;
+  background: #ecfeff;
   color: var(--sd-accent);
-  margin-right: 4px;
+  transform: translateY(-1px);
+}
+
+.app-header-link:hover span:first-child {
+  transform: translateX(-1px);
+}
+
+.app-header-link:focus-visible {
+  outline: 2px solid rgba(13, 148, 136, 0.35);
+  outline-offset: 2px;
 }
 
 .app-header-nav {

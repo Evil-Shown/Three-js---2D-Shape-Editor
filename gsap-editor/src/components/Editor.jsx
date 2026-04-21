@@ -806,30 +806,24 @@ export default function Editor({ shapeId = null } = {}) {
     <div style={rootStyle}>
       {/* Top bar: balanced layout, menus visible */}
       <header className="app-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Link
-            to="/"
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: ui.link,
-              textDecoration: 'none',
-            }}
-          >
-            ← Home
+        <div className="app-header-left">
+          <Link to="/custom-shapes" className="app-header-link">
+            <span className="app-header-link-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </span>
+            <span>Library</span>
           </Link>
-          <Link
-            to="/custom-shapes"
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: ui.link,
-              textDecoration: 'none',
-            }}
-          >
-            Library
-          </Link>
-          <span className="app-header-brand">Shape Designer</span>
+          <span className="app-header-brand">
+            <span className="app-header-brand-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 7h16v10H4z" />
+                <path d="M12 7v10M4 12h16" />
+              </svg>
+            </span>
+            <span>Shape Designer</span>
+          </span>
         </div>
 
         <Toolbar

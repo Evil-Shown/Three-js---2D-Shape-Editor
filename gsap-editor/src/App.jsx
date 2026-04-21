@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import Editor from './components/Editor'
-import LandingPage from './pages/LandingPage'
 import CustomShapesGallery from './pages/CustomShapesGallery'
 
 function EditorByParam() {
@@ -13,7 +12,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<CustomShapesGallery />} />
         <Route path="/editor" element={<Editor shapeId={null} />} />
         <Route path="/editor/:shapeId" element={<EditorByParam />} />
         <Route path="/custom-shapes" element={<CustomShapesGallery />} />

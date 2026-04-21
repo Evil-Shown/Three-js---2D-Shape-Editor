@@ -5,6 +5,8 @@ import { shapePayloadToSvg } from '../preview/shapePreviewSvg'
 import { Toaster, toast } from '../components/Toast'
 import './CustomShapesGallery.css'
 
+const OPTI_SHAPES_URL = import.meta.env.VITE_OPTI_SHAPES_URL || 'http://localhost:8090'
+
 export default function CustomShapesGallery() {
   const navigate = useNavigate()
   const [items, setItems] = useState([])
@@ -57,15 +59,20 @@ export default function CustomShapesGallery() {
     }
   }
 
+  const handleBackToOptiShapes = () => {
+    const base = OPTI_SHAPES_URL.replace(/\/$/, '')
+    window.location.href = `${base}/shapes/editor?fromDrawer=1`
+  }
+
   return (
     <div className="sd-gallery">
       <header className="sd-gallery__bar">
-        <div className="sd-gallery__brand">
-          <Link to="/" className="sd-gallery__home">
-            ← Shape Designer
-          </Link>
-          <h1 className="sd-gallery__title">Custom shapes</h1>
+        <div className="sd-gallery__left">
+          <button type="button" className="sd-gallery__home" onClick={handleBackToOptiShapes}>
+            ← Back to Opti-Shapes
+          </button>
         </div>
+        <h1 className="sd-gallery__title">Custom shapes</h1>
         <div className="sd-gallery__actions">
           <button type="button" className="sd-gallery__btn sd-gallery__btn--ghost" onClick={load} disabled={loading}>
             Refresh
