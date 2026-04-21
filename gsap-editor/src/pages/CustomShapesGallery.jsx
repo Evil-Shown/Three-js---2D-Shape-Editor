@@ -11,6 +11,7 @@ export default function CustomShapesGallery() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [pendingDelete, setPendingDelete] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -34,11 +35,16 @@ export default function CustomShapesGallery() {
     navigate(`/editor/${id}`)
   }
 
-  const handleDelete = async (row, e) => {
+  const handleDeleteClick = (row, e) => {
     e?.preventDefault?.()
     e?.stopPropagation?.()
-    const title = row.shape_name || row.json_data?.name || `Shape #${row.id}`
-    if (!window.confirm(`Delete "${title}" from the library? This cannot be undone.`)) return
+    setPendingDelete(row)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    const row = pendingDelete
+    setPendingDelete(null)
     setDeletingId(row.id)
     try {
       await deleteShape(row.id)
@@ -135,7 +141,7 @@ export default function CustomShapesGallery() {
                         className="sd-tile__delete"
                         title={`Delete ${title}`}
                         disabled={deletingId === row.id || loading}
-                        onClick={(e) => handleDelete(row, e)}
+                        onClick={(e) => handleDeleteClick(row, e)}
                       >
                         {deletingId === row.id ? '…' : 'Delete'}
                       </button>
@@ -147,6 +153,35 @@ export default function CustomShapesGallery() {
           </ul>
         )}
       </main>
+      {pendingDelete && (
+        <div className="sd-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+          <div className="sd-confirm__backdrop" onClick={() => setPendingDelete(null)} />
+          <div className="sd-confirm__panel">
+            <div className="sd-confirm__icon" aria-hidden>🗑️</div>
+            <h3 id="delete-modal-title" className="sd-confirm__title">Delete shape?</h3>
+            <p className="sd-confirm__text">
+              Delete <strong>&quot;{pendingDelete.shape_name || pendingDelete.json_data?.name || `Shape #${pendingDelete.id}`}&quot;</strong> from the library?
+            </p>
+            <p className="sd-confirm__subtext">This action cannot be undone.</p>
+            <div className="sd-confirm__actions">
+              <button
+                type="button"
+                className="sd-gallery__btn sd-gallery__btn--ghost"
+                onClick={() => setPendingDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="sd-confirm__danger"
+                onClick={confirmDelete}
+              >
+                Yes, delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <Toaster />
     </div>
   )
