@@ -933,16 +933,11 @@ export class ExportService {
    */
   _matchDeltaToExpression(delta, axis, params) {
     const eps = 1.5
-    const dimParam = axis === 'x'
-      ? params.find(p => p.name === 'L')
-      : params.find(p => p.name === 'H')
-    const otherDimParam = axis === 'x'
-      ? params.find(p => p.name === 'H')
-      : params.find(p => p.name === 'L')
-    const dim     = dimParam ? dimParam.defaultValue : null
-    const dimName = dimParam ? dimParam.name : null
-    const otherDim     = otherDimParam ? otherDimParam.defaultValue : null
-    const otherDimName = otherDimParam ? otherDimParam.name : null
+    const primaryDims = []
+    const dimL = params.find(p => p.name === 'L')
+    const dimH = params.find(p => p.name === 'H')
+    if (dimL) primaryDims.push(dimL)
+    if (dimH && (!dimL || dimH.name !== dimL.name)) primaryDims.push(dimH)
 
     const candidates = []
 
@@ -959,40 +954,27 @@ export class ExportService {
       )
     }
 
-    // Dim ± param
-    if (dim != null) {
+    // Dimension-based candidates (axis-agnostic):
+    // evaluate both L and H for every axis and let residual pick winner.
+    for (const dimParam of primaryDims) {
+      const dim = dimParam.defaultValue
+      const dimName = dimParam.name
+      if (!Number.isFinite(dim)) continue
+
       candidates.push(
-        { value: dim,  expr: `p0.${axis} + ${dimName}` },
+        { value: dim, expr: `p0.${axis} + ${dimName}` },
         { value: -dim, expr: `p0.${axis} - ${dimName}` },
       )
       for (const p of params) {
         if (p.name === dimName || p.defaultValue === 0) continue
         candidates.push(
-          { value: dim - p.defaultValue,     expr: `p0.${axis} + ${dimName} - ${p.name}` },
-          { value: dim + p.defaultValue,     expr: `p0.${axis} + ${dimName} + ${p.name}` },
-          { value: -(dim - p.defaultValue),  expr: `p0.${axis} - ${dimName} + ${p.name}` },
+          { value: dim - p.defaultValue, expr: `p0.${axis} + ${dimName} - ${p.name}` },
+          { value: dim + p.defaultValue, expr: `p0.${axis} + ${dimName} + ${p.name}` },
+          { value: -(dim - p.defaultValue), expr: `p0.${axis} - ${dimName} + ${p.name}` },
           { value: dim - 2 * p.defaultValue, expr: `p0.${axis} + ${dimName} - 2 * ${p.name}` },
         )
       }
-    }
 
-    // Other dimension ± param
-    if (otherDim != null && dimName && Math.abs(dim - otherDim) > eps) {
-      candidates.push(
-        { value: otherDim,  expr: `p0.${axis} + ${otherDimName}` },
-        { value: -otherDim, expr: `p0.${axis} - ${otherDimName}` },
-      )
-      for (const p of params) {
-        if (p.name === otherDimName || p.defaultValue === 0) continue
-        candidates.push(
-          { value: otherDim - p.defaultValue, expr: `p0.${axis} + ${otherDimName} - ${p.name}` },
-          { value: otherDim + p.defaultValue, expr: `p0.${axis} + ${otherDimName} + ${p.name}` },
-        )
-      }
-    }
-
-    // Half dimension
-    if (dim != null) {
       candidates.push(
         { value: dim / 2, expr: `p0.${axis} + ${dimName} / 2` },
       )

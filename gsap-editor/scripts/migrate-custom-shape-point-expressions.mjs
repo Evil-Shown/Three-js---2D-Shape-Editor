@@ -11,7 +11,7 @@ const dbConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
+  password: process.env.DB_PASSWORD || process.env.DB_PASS || '',
   database: process.env.DB_NAME || 'shapes',
 }
 
@@ -68,16 +68,11 @@ function collectPointCoords(root) {
 }
 
 function matchDeltaToExpression(delta, axis, params) {
-  const dimParam = axis === 'x'
-    ? params.find(p => p.name === 'L')
-    : params.find(p => p.name === 'H')
-  const otherDimParam = axis === 'x'
-    ? params.find(p => p.name === 'H')
-    : params.find(p => p.name === 'L')
-  const dim = dimParam ? dimParam.defaultValue : null
-  const dimName = dimParam ? dimParam.name : null
-  const otherDim = otherDimParam ? otherDimParam.defaultValue : null
-  const otherDimName = otherDimParam ? otherDimParam.name : null
+  const primaryDims = []
+  const dimL = params.find(p => p.name === 'L')
+  const dimH = params.find(p => p.name === 'H')
+  if (dimL) primaryDims.push(dimL)
+  if (dimH && (!dimL || dimH.name !== dimL.name)) primaryDims.push(dimH)
 
   const candidates = [{ value: 0, expr: `p0.${axis}` }]
 
@@ -90,7 +85,9 @@ function matchDeltaToExpression(delta, axis, params) {
     )
   }
 
-  if (dim != null) {
+  for (const dimParam of primaryDims) {
+    const dim = dimParam.defaultValue
+    const dimName = dimParam.name
     candidates.push(
       { value: dim, expr: `p0.${axis} + ${dimName}` },
       { value: -dim, expr: `p0.${axis} - ${dimName}` },
@@ -104,23 +101,6 @@ function matchDeltaToExpression(delta, axis, params) {
         { value: dim - 2 * p.defaultValue, expr: `p0.${axis} + ${dimName} - 2 * ${p.name}` },
       )
     }
-  }
-
-  if (otherDim != null && dimName && Math.abs(dim - otherDim) > EPS) {
-    candidates.push(
-      { value: otherDim, expr: `p0.${axis} + ${otherDimName}` },
-      { value: -otherDim, expr: `p0.${axis} - ${otherDimName}` },
-    )
-    for (const p of params) {
-      if (p.name === otherDimName || p.defaultValue === 0) continue
-      candidates.push(
-        { value: otherDim - p.defaultValue, expr: `p0.${axis} + ${otherDimName} - ${p.name}` },
-        { value: otherDim + p.defaultValue, expr: `p0.${axis} + ${otherDimName} + ${p.name}` },
-      )
-    }
-  }
-
-  if (dim != null) {
     candidates.push({ value: dim / 2, expr: `p0.${axis} + ${dimName} / 2` })
     for (const p of params) {
       if (p.name === dimName || p.defaultValue === 0) continue
@@ -129,6 +109,30 @@ function matchDeltaToExpression(delta, axis, params) {
         { value: dim / 2 - p.defaultValue, expr: `p0.${axis} + ${dimName} / 2 - ${p.name}` },
       )
     }
+
+    // Legacy fallback: allow a constant geometric offset around dimensions.
+    const plusOffset = formatNumberLiteral(delta - dim)
+    const minusOffset = formatNumberLiteral(delta + dim)
+    if (Math.abs(delta - dim) <= 5) {
+      candidates.push({
+        value: dim + Number(plusOffset),
+        expr: `p0.${axis} + ${dimName} + ${plusOffset}`,
+      })
+    }
+    if (Math.abs(delta + dim) <= 5) {
+      candidates.push({
+        value: -dim + Number(minusOffset),
+        expr: `p0.${axis} - ${dimName} + ${minusOffset}`,
+      })
+    }
+  }
+
+  if (Math.abs(delta) <= 5 && Math.abs(delta) > EPS) {
+    const offsetOnly = formatNumberLiteral(delta)
+    candidates.push({
+      value: Number(offsetOnly),
+      expr: `p0.${axis} + ${offsetOnly}`,
+    })
   }
 
   for (let i = 0; i < params.length; i++) {
