@@ -7,9 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "migrate:custom-point-expr:dry": "node ./scripts/migrate-custom-shape-point-expressions.mjs",
+    "migrate:custom-point-expr:apply": "node ./scripts/migrate-custom-shape-point-expressions.mjs --apply"
   },
   "dependencies": {
+    "mysql2": "^3.22.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.14.0",

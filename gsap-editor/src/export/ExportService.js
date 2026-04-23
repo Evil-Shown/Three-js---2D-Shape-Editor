@@ -52,7 +52,7 @@ export class ExportService {
       payload.parameters = paramPayload.parameters
       payload.edgeServices = paramPayload.edgeServices
       payload.pointExpressions = this._remapPointExpressions(
-        rawEdges, chainedEdges, paramPayload.pointExpressions
+        rawEdges, chainedEdges, paramPayload.pointExpressions, paramPayload.parameters
       )
 
       // ── Parametric edge chain (v2.0) ─────────────────────────────────────
@@ -119,7 +119,7 @@ export class ExportService {
       payload.parameters = paramPayload.parameters
       payload.edgeServices = paramPayload.edgeServices
       payload.pointExpressions = this._remapPointExpressions(
-        rawEdges, chainedEdges, paramPayload.pointExpressions
+        rawEdges, chainedEdges, paramPayload.pointExpressions, paramPayload.parameters
       )
 
       // ── Parametric edge chain (v2.0) ─────────────────────────────────────
@@ -386,7 +386,7 @@ export class ExportService {
    * We must remap pointExpression keys AND all pN references in expressions.
    */
 
-  _remapPointExpressions(originalEdges, chainedEdges, pointExprs) {
+  _remapPointExpressions(originalEdges, chainedEdges, pointExprs, params = []) {
     if (!pointExprs || Object.keys(pointExprs).length === 0) return pointExprs
 
     // Extract points in original order
@@ -477,11 +477,9 @@ export class ExportService {
     const needsRemap = Object.entries(remap).some(([k, v]) => k !== v)
     if (!needsRemap) {
       console.log('No remapping needed — point order unchanged')
-      console.groupEnd()
-      return pointExprs
+    } else {
+      console.log('Remap:', JSON.stringify(remap))
     }
-
-    console.log('Remap:', JSON.stringify(remap))
 
     // Apply remapping to point expressions
     const remapped = {}
@@ -493,6 +491,44 @@ export class ExportService {
       }
       if (oldKey !== newKey || expr.x !== remapped[newKey].x || expr.y !== remapped[newKey].y) {
         console.log(`  ${oldKey} → ${newKey}: x="${expr.x}" → "${remapped[newKey].x}", y="${expr.y}" → "${remapped[newKey].y}"`)
+      }
+    }
+
+    // Formula synthesis pass:
+    // Convert literal point coordinates into parametric expressions using existing
+    // delta matching helpers. If no safe derivation is found, keep literal as-is.
+    const pointById = new Map(newPoints.map(p => [p.id, p]))
+    const p0 = pointById.get('p0')
+    if (p0 && Array.isArray(params) && params.length > 0) {
+      const isLiteral = (expr) =>
+        typeof expr === 'string' &&
+        !/[a-zA-Z]/.test(expr) &&
+        !Number.isNaN(Number(expr))
+
+      for (const [pointId, expr] of Object.entries(remapped)) {
+        if (pointId === 'p0' || !expr) continue
+        const pt = pointById.get(pointId)
+        if (!pt) continue
+
+        if (isLiteral(expr.x)) {
+          const targetX = Number(expr.x)
+          const dx = targetX - p0.x
+          const derivedX = this._matchDeltaToExpression(dx, 'x', params)
+          if (derivedX) {
+            expr.x = derivedX
+            console.log(`  synthesized ${pointId}.x: literal ${targetX} → "${derivedX}"`)
+          }
+        }
+
+        if (isLiteral(expr.y)) {
+          const targetY = Number(expr.y)
+          const dy = targetY - p0.y
+          const derivedY = this._matchDeltaToExpression(dy, 'y', params)
+          if (derivedY) {
+            expr.y = derivedY
+            console.log(`  synthesized ${pointId}.y: literal ${targetY} → "${derivedY}"`)
+          }
+        }
       }
     }
 
@@ -1040,6 +1076,11 @@ export class ExportService {
     let allPointsParametric = true
     let allArcsParametric = true
 
+    const isLiteralExpr = (expr) =>
+      typeof expr === 'string' &&
+      !/[a-zA-Z]/.test(expr) &&
+      !Number.isNaN(Number(expr))
+
     // Check point expressions — a point is "parametric" if its expression
     // contains at least one parameter reference (not just a literal number)
     for (const pt of shapePoints) {
@@ -1049,9 +1090,10 @@ export class ExportService {
         allPointsParametric = false
         continue
       }
-      const xIsLiteral = !isNaN(Number(expr.x)) && !/[a-zA-Z]/.test(expr.x)
-      const yIsLiteral = !isNaN(Number(expr.y)) && !/[a-zA-Z]/.test(expr.y)
-      if (xIsLiteral && yIsLiteral) {
+      const xIsLiteral = isLiteralExpr(expr.x)
+      const yIsLiteral = isLiteralExpr(expr.y)
+      // A point is only fully parametric if BOTH axis expressions are parametric.
+      if (xIsLiteral || yIsLiteral) {
         literalPoints.push(pt.id)
         allPointsParametric = false
       }
