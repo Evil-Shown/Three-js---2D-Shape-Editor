@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-04-23T12:22:40.570Z",
+  "mode": "dry-run",
+  "totalRows": 0,
+  "changedRows": 0,
+  "db": {
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
+    "password": "***",
+    "database": "shapes_db"
+  },
+  "updates": []
+}
